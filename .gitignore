@@ -206,13 +206,42 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Project-specific
+# ============================================
+# Project-specific & MVP Exclusions
+# ============================================
+
+# Vector databases
 chroma_data/
+.qdrant/
+.faiss/
+
+# Logs and temporary files
 logs/
-output_results/
 temp/
+*.log
+
+# Output results (generated files)
+output_results/
+
+# Environment variables and secrets
 .env
+.envrc
+credentials.json
+*.key
+*.pem
+
+# Test data - exclude results but keep samples
 *.xlsx
 *.docx
 !test_data/*.xlsx
 !test_data/*.docx
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+*.egg-info/
