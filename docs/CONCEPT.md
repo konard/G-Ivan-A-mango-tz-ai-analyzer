@@ -8,6 +8,8 @@
 
 **Стандарты:** ISO/IEC 29148 (требования), ISO/IEC 42001 (управление ИИ), ISO/IEC 23894 (риски), NIST AI RMF, BABOK v3.
 
+**Команда и роли:** Product Owner — Ivan Gulienko (@G-Ivan-A), Code Agent — Konstantin Diachenko (@konard), Prompt Owner — Ivan Gulienko (@G-Ivan-A). Подробное описание ролей, ответственностей и матрица RACI — в [`docs/standards/roles.md`](standards/roles.md).
+
 ## 2. Бизнес-контекст
 | Проблема | Влияние | Метрика успеха (MVP) |
 |----------|---------|----------------------|
@@ -53,6 +55,8 @@
 
 ## 8. 📂 Структура документации
 - **Концепция и требования:** [`docs/CONCEPT.md`](CONCEPT.md) — единый источник истины.
-- **Архитектурные решения:** [`docs/ADR/`](ADR/) — почему выбран RAG, гибридный поиск и т.д.
+- **Архитектурные решения:** [`docs/ADR/`](ADR/) — почему выбран RAG, гибридный поиск и т.д. ([`ADR-001`](ADR/001-rag-architecture.md)).
 - **Аналитические отчёты:** [`docs/analysis/`](analysis/) — ревью концепции, код-аудит, рекомендации команды.
-- **Стандарты и шаблоны:** [`docs/standards/`](standards/) — гайдлайны по именованию ([`naming-convention.md`](standards/naming-convention.md)) и шаблоны документов ([`templates/`](standards/templates/)).
+- **Аудиты:** [`docs/audit/`](audit/) — технические аудиты (например, [маскирование данных](audit/data-masking_v1.md)).
+- **Стандарты и шаблоны:** [`docs/standards/`](standards/) — [роли команды](standards/roles.md), [конвенция именования](standards/naming-convention.md), [стандарт модели эмбеддингов](standards/embedding-model.md) и шаблоны документов ([`templates/`](standards/templates/)).
+- **Runbooks:** [`docs/runbooks/`](runbooks/) — эксплуатационные инструкции (наполнение с этапа «Пилот»).

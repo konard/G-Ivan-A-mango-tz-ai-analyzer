@@ -3,7 +3,9 @@
 Каталог стандартов и шаблонов проектной документации: правила именования файлов, требования к структуре аналитических документов, шаблоны для повторного использования.
 
 ## Содержание
+- [`roles.md`](roles.md) — роли, владельцы и ответственности команды проекта (Product Owner, Code Agent, Prompt Owner).
 - [`naming-convention.md`](naming-convention.md) — стандарт именования файлов документации (ISO 8601, типы документов, семантическое версионирование).
+- [`embedding-model.md`](embedding-model.md) — стандарт модели эмбеддингов (`BAAI/bge-m3`, критерии замены).
 - [`templates/analysis-template.md`](templates/analysis-template.md) — шаблон для аналитических отчётов и ревью.
 - [`templates/decision-template.md`](templates/decision-template.md) — шаблон для документов с решениями вне ADR.
 
