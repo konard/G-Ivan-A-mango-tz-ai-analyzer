@@ -57,6 +57,6 @@
 - **Концепция и требования:** [`docs/CONCEPT.md`](CONCEPT.md) — единый источник истины.
 - **Архитектурные решения:** [`docs/ADR/`](ADR/) — почему выбран RAG, гибридный поиск и т.д. ([`ADR-001`](ADR/001-rag-architecture.md)).
 - **Аналитические отчёты:** [`docs/analysis/`](analysis/) — ревью концепции, код-аудит, рекомендации команды.
-- **Аудиты:** [`docs/audit/`](audit/) — технические аудиты (например, [маскирование данных](audit/data-masking_v1.md)).
+- **Аудиты:** [`docs/audit/`](audit/) — технические аудиты ([маскирование данных](audit/data-masking_v1.md), [согласованность репозитория и тестируемость](audit/2026-05-12_repository-consistency_audit_v1.md)).
 - **Стандарты и шаблоны:** [`docs/standards/`](standards/) — [роли команды](standards/roles.md), [конвенция именования](standards/naming-convention.md), [стандарт модели эмбеддингов](standards/embedding-model.md) и шаблоны документов ([`templates/`](standards/templates/)).
 - **Runbooks:** [`docs/runbooks/`](runbooks/) — эксплуатационные инструкции (наполнение с этапа «Пилот»).
