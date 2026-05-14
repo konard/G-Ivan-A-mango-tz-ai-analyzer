@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,9 +22,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import yaml
 
-logger = logging.getLogger(__name__)
+from src.llm.masking import mask_text, mask_context_chunks  # noqa: F401 - re-export for backward compatibility
+from src.llm.validator import extract_json, validate_payload  # noqa: F401 - re-export for backward compatibility
 
-_VALID_CATEGORIES = {"Да", "Нет", "Частично", "НД"}
+logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_CONFIG_PATH = "configs/llm_config.yaml"
 DEFAULT_MASKING_CONFIG_PATH = "configs/masking_rules.yaml"
@@ -59,89 +59,6 @@ class ClassificationResult:
             "recommendations": self.recommendations,
             "provider": self.provider,
         }
-
-
-# --------------------------------------------------------------------- masking --
-def _load_yaml(path: str) -> Dict[str, Any]:
-    file_path = Path(path)
-    if not file_path.exists():
-        logger.warning("Config file not found: %s", file_path)
-        return {}
-    try:
-        return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        logger.warning("Failed to parse %s: %s", file_path, exc)
-        return {}
-
-
-def _compile_masking_patterns(config: Dict[str, Any]) -> List[tuple[re.Pattern[str], str]]:
-    compiled: List[tuple[re.Pattern[str], str]] = []
-    for entry in config.get("patterns", []) or []:
-        regex = entry.get("regex")
-        replacement = entry.get("replacement", "[MASKED]")
-        if not regex:
-            continue
-        try:
-            compiled.append((re.compile(regex), replacement))
-        except re.error as exc:
-            logger.warning("Skipping invalid masking pattern %r: %s", regex, exc)
-    return compiled
-
-
-def mask_text(
-    text: str,
-    config_path: str = DEFAULT_MASKING_CONFIG_PATH,
-    _cache: Dict[str, List[tuple[re.Pattern[str], str]]] = {},
-) -> str:
-    """Apply regex masking rules from ``masking_rules.yaml`` to ``text``."""
-    if not text:
-        return text
-    if config_path not in _cache:
-        _cache[config_path] = _compile_masking_patterns(_load_yaml(config_path))
-    masked = text
-    for pattern, replacement in _cache[config_path]:
-        masked = pattern.sub(replacement, masked)
-    return masked
-
-
-# -------------------------------------------------------------- response shape --
-def _extract_json(payload: str) -> Dict[str, Any]:
-    """Parse the first JSON object found in ``payload``."""
-    if not payload:
-        raise ValueError("Empty LLM response")
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        start = payload.find("{")
-        end = payload.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(payload[start : end + 1])
-
-
-def _validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    classification = payload.get("classification")
-    if classification not in _VALID_CATEGORIES:
-        raise ValueError(f"Invalid classification value: {classification!r}")
-    if not isinstance(payload.get("reasoning"), str) or not payload["reasoning"].strip():
-        raise ValueError("Missing or empty 'reasoning'")
-    citations = payload.get("citations", []) or []
-    if not isinstance(citations, list):
-        raise ValueError("'citations' must be a list")
-    if classification != "НД" and not citations:
-        raise ValueError("'citations' must contain at least one entry for non-НД classifications")
-    confidence = payload.get("confidence", 0.0)
-    try:
-        confidence = float(confidence)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("'confidence' must be a float") from exc
-    if not 0.0 <= confidence <= 1.0:
-        raise ValueError("'confidence' must be within [0.0, 1.0]")
-    payload["confidence"] = confidence
-    payload["requires_ba_review"] = bool(payload.get("requires_ba_review", confidence < 0.75))
-    payload["recommendations"] = str(payload.get("recommendations", "") or "")
-    payload["citations"] = citations
-    return payload
 
 
 # ----------------------------------------------------------------- LLM client --
@@ -180,11 +97,24 @@ class LLMClient:
         provider_callers: Optional[Dict[str, ProviderCall]] = None,
     ) -> "LLMClient":
         return cls(
-            llm_config=_load_yaml(config_path),
+            llm_config=_load_llm_config(config_path),
             masking_config_path=masking_config_path,
             prompt_path=prompt_path,
             provider_callers=provider_callers,
         )
+
+    @staticmethod
+    def _load_llm_config(path: str) -> Dict[str, Any]:
+        """Load LLM configuration from YAML file."""
+        file_path = Path(path)
+        if not file_path.exists():
+            logger.warning("Config file not found: %s", file_path)
+            return {}
+        try:
+            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            logger.warning("Failed to parse %s: %s", file_path, exc)
+            return {}
 
     @staticmethod
     def _load_system_prompt(prompt_path: str) -> str:
@@ -221,12 +151,21 @@ class LLMClient:
         context_chunks: Sequence[Dict[str, Any]],
         requirement_id: Optional[str] = None,
     ) -> ClassificationResult:
-        """Run masking → provider fallback → JSON validation for one requirement."""
+        """Run masking → provider fallback → JSON validation for one requirement.
+        
+        Both the requirement text and RAG context chunks are masked before
+        being sent to the LLM provider to prevent data leakage.
+        """
         if not req_text or not req_text.strip():
             raise ValueError("Requirement text must not be empty")
 
+        # Mask requirement text
         masked_req = self.mask_text(req_text)
-        context_block = self._format_context(context_chunks)
+        
+        # Mask context chunks to prevent sensitive data leakage
+        masked_chunks = mask_context_chunks(list(context_chunks), config_path=self.masking_config_path)
+        context_block = self._format_context(masked_chunks)
+        
         user_message = self._build_user_message(masked_req, context_block, requirement_id)
 
         last_error: Optional[Exception] = None
@@ -239,8 +178,8 @@ class LLMClient:
             for attempt in range(1, retries + 1):
                 try:
                     raw_response = caller(self.system_prompt, user_message, provider_cfg)
-                    payload = _extract_json(raw_response)
-                    payload = _validate_payload(payload)
+                    payload = extract_json(raw_response)
+                    payload = validate_payload(payload)
                     return ClassificationResult(
                         classification=payload["classification"],
                         reasoning=payload["reasoning"],
