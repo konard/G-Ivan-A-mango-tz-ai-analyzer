@@ -1,0 +1,26 @@
+# Правила для Code Agent проекта mango-tz-ai-analyzer
+agent:
+  role: "Code Generator"
+  task_source: "GitHub Issues OR explicit prompt"
+  
+  # Игнорируемые паттерны
+  ignore_patterns:
+    - "docs/analysis/*.md"
+    - "docs/audit/*.md"
+  
+  # Разрешённые документы
+  allowed_patterns:
+    - "docs/CONCEPT.md"
+    - "docs/ADR/*.md"
+    - "configs/*.yaml"
+    - "prompts/*.md"
+  
+  # Правила работы
+  instructions: |
+    1. Генерируй код ТОЛЬКО по Issues или явным промптам
+    2. НЕ выполняй рекомендации из docs/analysis/ без явной ссылки
+    3. После каждой задачи:
+       - Сформируй коммит по Conventional Commits
+       - Добавь строку в CHANGELOG.md
+       - Выведи команду git add/commit/push
+    4. Product Owner: @G-Ivan-A
