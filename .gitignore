@@ -1,1 +1,12 @@
-Nothing should be ignored in this case, as the changes only include source code files (.py) and no build artifacts, dependencies, or temporary files.
+```gitignore
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test coverage
+.coverage
+htmlcov/
+.coverage.*
+```

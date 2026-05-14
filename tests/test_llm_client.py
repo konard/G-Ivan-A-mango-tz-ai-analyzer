@@ -138,3 +138,92 @@ def test_classify_requirement_all_fail_raises() -> None:
     )
     with pytest.raises(LLMError):
         client.classify_requirement("Что-то", context_chunks=[])
+
+
+def test_classify_requirement_masks_requirement_and_context() -> None:
+    """Test that both requirement text and RAG context chunks are masked before LLM call."""
+    captured_messages = []
+
+    def capture_provider(system_prompt, user_message, cfg):
+        captured_messages.append({"system": system_prompt, "user": user_message})
+        return json.dumps(
+            {
+                "classification": "НД",
+                "confidence": 0.0,
+                "reasoning": "Test masking verification",
+                "citations": [],
+                "requires_ba_review": True,
+            },
+            ensure_ascii=False,
+        )
+
+    client = LLMClient(
+        llm_config={"providers": {"test": {}}},
+        masking_config_path="configs/masking_rules.yaml",
+        provider_callers={"test": capture_provider},
+    )
+
+    # Requirement with sensitive data
+    req_text = "Contact admin@example.com at +71234567890 for support"
+    # Context chunks with sensitive data
+    context_chunks = [
+        {"text": "Server IP: 192.168.1.100 is responding", "source": "infra.md"},
+        {"text": "API endpoint: api.mango.internal/docs", "source": "api.md"},
+    ]
+
+    result = client.classify_requirement(req_text, context_chunks)
+
+    assert len(captured_messages) == 1
+    user_msg = captured_messages[0]["user"]
+
+    # Verify requirement text is masked
+    assert "admin@example.com" not in user_msg
+    assert "+71234567890" not in user_msg
+    assert "[EMAIL]" in user_msg
+    assert "[PHONE]" in user_msg
+
+    # Verify context chunks are masked
+    assert "192.168.1.100" not in user_msg
+    assert "api.mango.internal" not in user_msg
+    assert "[IP]" in user_msg
+    assert "[DOMAIN]" in user_msg
+
+
+def test_classify_requirement_fails_without_context_masking() -> None:
+    """Test that would fail if context_chunks were not masked.
+    
+    This test verifies the mitigation of risk 9.1 from the audit:
+    RAG context must be masked before sending to LLM.
+    """
+    captured_user_messages = []
+
+    def capture_provider(system_prompt, user_message, cfg):
+        captured_user_messages.append(user_message)
+        return json.dumps(
+            {
+                "classification": "Да",
+                "confidence": 0.9,
+                "reasoning": "Confirmed",
+                "citations": [{"source": "doc.md", "section": "1", "quote": "yes"}],
+                "requires_ba_review": False,
+            },
+            ensure_ascii=False,
+        )
+
+    client = LLMClient(
+        llm_config={"providers": {"test": {}}},
+        provider_callers={"test": capture_provider},
+    )
+
+    # Context with sensitive internal domain that should be masked
+    context_with_secret = [
+        {"text": "Internal API: secret-api.internal.corp", "source": "internal.md"}
+    ]
+
+    client.classify_requirement("Test requirement", context_with_secret)
+
+    # If masking was not applied to context, this assertion would fail
+    user_msg = captured_user_messages[0]
+    assert "secret-api.internal.corp" not in user_msg, \
+        "Context chunk was not masked - sensitive data leaked to LLM!"
+    assert "[DOMAIN]" in user_msg, "Domain masking was not applied to context"

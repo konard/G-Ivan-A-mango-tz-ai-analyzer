@@ -20,6 +20,7 @@
 - **Общая оценка готовности:** ⚠️ **Conditional Approve** — репозиторий готов к запуску MVP, ключевые артефакты согласованы, 14/14 unit-тестов проходят, но обнаружены некритические пробелы (отсутствуют `docx_parser`, `docx_exporter`, отдельный модуль `src/llm/masking.py`, явный валидатор JSON, выходной формат экспортёра не полностью соответствует разделу 3 концепции).
 - **Критические пробелы:** не выявлено. Все MUST-рекомендации из ревью концепции (`docs/analysis/2026-05-12_review_mvp-context_v1.md`) закрыты: ADR-001 заполнен, аудит маскирования оформлен, роли зафиксированы, стандарт эмбеддингов утверждён.
 - **Рекомендации (краткий перечень):** выровнять имена колонок экспорта с концепцией (`[Статус]`, `[Комментарий]`), вынести маскирование в отдельный модуль `src/llm/masking.py`, добавить заглушки `docx_parser.py` / `docx_writer.py` или зафиксировать их отложение как осознанное решение, добавить benchmark-скрипт для НФТ «≤15 мин/50 требований» и метрику F1 на `gold_standard.json`.
+- **Update v1.1:** Риск 9.1 (RAG context masking) закрыт — `src/llm/masking.py` и `src/llm/validator.py` выделены, `mask_context_chunks` применяется в `classify_requirement`. 42 теста проходят.
 
 ## 2. Structure Audit
 Проверка наличия обязательных каталогов и файлов согласно MVP-плану (раздел 1 issue #21). Источник: текущее состояние ветки `issue-21-cbdfdd436283`.
@@ -33,9 +34,9 @@
 | `src/rag/hybrid_search.py` | ⚠️ | Логика BM25 + Dense + RRF реализована, но в файле `src/rag/retriever.py`. Имя файла отличается от чек-листа issue #21. |
 | `src/rag/chunker.py` | ❌ | Отсутствует. Чанкинг 200–300 токенов, overlap 50 (раздел 4 концепции) пока не реализован — параметры заданы в `configs/embedding_config.yaml` и `knowledge_base/indexing/chunk_config.yaml`. |
 | `src/rag/retriever.py` | ✅ | Полная реализация гибридного поиска с RRF (k = 60). |
-| `src/llm/client.py` | ✅ | Реализованы fallback (4 провайдера + stub), retries, валидация JSON, форматирование контекста. |
-| `src/llm/masking.py` | ⚠️ | Отдельного модуля нет — маскирование реализовано как функция `mask_text` и кэш в `src/llm/client.py`. Функционал есть, но архитектурное разделение нарушено относительно концепции (раздел 3) и аудита маскирования. |
-| `src/llm/validator.py` | ⚠️ | Отдельного файла нет — валидация JSON-схемы реализована функцией `_validate_payload` в `src/llm/client.py`. Функциональность присутствует. |
+| `src/llm/client.py` | ✅ | Реализованы fallback (4 провайдера + stub), retries, валидация JSON, форматирование контекста. Использует модули `masking.py` и `validator.py`. |
+| `src/llm/masking.py` | ✅ | Отдельный модуль маскирования с функциями `mask_text`, `mask_context_chunks` и классом `Masker`. Риск 9.1 закрыт. |
+| `src/llm/validator.py` | ✅ | Отдельный модуль валидации JSON с функциями `extract_json`, `validate_payload`. Категории Да/Нет/Частично/НД, confidence 0..1, mandatory citations. |
 | `src/exporters/excel_writer.py` | ⚠️ | Файл существует под именем `src/exporters/excel_exporter.py`. Функциональность совпадает, имя отличается. |
 | `src/exporters/docx_writer.py` | ❌ | Отсутствует. Концепция допускает экспорт в `.docx` (раздел 3), но MVP-фокус на `.xlsx`. |
 | `src/pipeline.py` | ✅ | Оркестратор end-to-end: парсинг → RAG → маскирование → LLM → экспорт, CLI-интерфейс. |
@@ -129,7 +130,7 @@
 | **Время ≤ 15 мин / 50 требований** | ⚠️ | Артефакта замера нет (`tests/benchmark.py` отсутствует). | ❌ |
 | **Цитируемость ≥ 95%** | ✅ | Жёстко форсится в `_validate_payload`: ответ без `citations` для non-НД отклоняется. | ✅ |
 | **Актуальность БЗ ≤ 24 ч** | ⚠️ | `source_registry.csv` фиксирует `indexed_date`, но cron/триггер не настроен. | ❌ (MVP допускает ручное обновление). |
-| **0 утечек данных** | ✅ | Маскирование применяется к тексту требования (`LLMClient.mask_text` → `mask_text`). | ⚠️ Контекст из RAG (`context_chunks`) маскированию не подвергается — потенциальная утечка, если в источниках встретятся email/IP. Открытый вопрос для следующего инкремента. |
+| **0 утечек данных** | ✅ | Маскирование применяется к тексту требования и RAG context (`mask_context_chunks`). Риск 9.1 закрыт. | ✅ |
 | **Аудируемость сессий** | ⚠️ | Логи через `logging`, экспорт содержит `[Провайдер]`. Отдельного `run_id` пока нет. | ⚠️ |
 
 ## 5. Code-Documentation Alignment
@@ -139,8 +140,8 @@
 | RAG-паттерн (концепция, раздел 3) | `src/rag/retriever.py` + `src/pipeline.py` | ✅ Поток «парсинг → RAG-поиск → LLM → валидация → экспорт» реализован в `run_analysis`. |
 | Гибридный поиск (BM25 + Dense + RRF) | `src/rag/retriever.py` (`HybridRetriever.search`, RRF k = 60) | ✅ |
 | LLM-клиент с fallback (4 провайдера) | `src/llm/client.py` (`_call_dashscope`, `_call_deepseek`, `_call_gigachat`, `_call_yandex`, `_call_stub`) | ✅ Дополнительно — провайдер `stub` для offline-сценариев. |
-| Маскирование | `src/llm/client.py::mask_text` (нет отдельного `src/llm/masking.py`) | ⚠️ Функциональность есть, но архитектурное разделение нарушено относительно issue #21 чек-листа. |
-| Валидация JSON | `src/llm/client.py::_validate_payload` (нет отдельного `validator.py`) | ⚠️ Аналогично — функционал в `client.py`. |
+| Маскирование | `src/llm/masking.py` (`mask_text`, `mask_context_chunks`, `Masker`) | ✅ Вынесено в отдельный модуль, применяется к требованию и context chunks. |
+| Валидация JSON | `src/llm/validator.py` (`extract_json`, `validate_payload`) | ✅ Вынесено в отдельный модуль, категории Да/Нет/Частично/НД, mandatory citations. |
 | Промпт-менеджмент | `prompts/system_classifier_v1.0.md` + `prompt_changelog.md` | ✅ |
 | Конфигурация (нет хардкода) | `LLMClient.from_config`, `HybridRetriever.from_config`, `mask_text(config_path=…)`, `src/app.py::load_llm_config` | ✅ Все ключевые модули читают YAML. |
 | Чанкинг 200–300 токенов | `configs/embedding_config.yaml` (`chunk_size: 250`, `chunk_overlap: 50`) | ⚠️ Конфиг есть, но `src/rag/chunker.py` не реализован — текущий retriever индексирует документы целиком. |
@@ -189,7 +190,7 @@
 ## 9. Critical Risks & Best-practice Reuse
 
 ### 9.1. Критические уязвимости (по результатам аудита)
-1. **Контекст RAG не маскируется.** В `src/llm/client.py::classify_requirement` маскированию подвергается только `req_text`, а `context_chunks` (полученные из `knowledge_base/`) отправляются в LLM «как есть». Если в публичных источниках появятся email/IP/внутренние домены, они утекут к зарубежным провайдерам. **Митигация:** распространить `mask_text` на `context_block` или предварительно маскировать содержимое `knowledge_base/sources/` при индексации.
+1. **Контекст RAG не маскируется.** В `src/llm/client.py::classify_requirement` маскированию подвергается только `req_text`, а `context_chunks` (полученные из `knowledge_base/`) отправляются в LLM «как есть». Если в публичных источниках появятся email/IP/внутренние домены, они утекут к зарубежным провайдерам. **Митигация:** распространить `mask_text` на `context_block` или предварительно маскировать содержимое `knowledge_base/sources/` при индексации. **[ЗАКРЫТО в v1.1]** — реализовано в `src/llm/masking.py::mask_context_chunks`, вызывается в `LLMClient.classify_requirement`. Добавлены тесты `test_classify_requirement_masks_requirement_and_context` и `test_classify_requirement_fails_without_context_masking`.
 2. **`source_registry.csv` содержит `sha256_hash: pending`.** Концепция требует «версионирование, хеш-чек файлов» (раздел 6). Пока хеши не посчитаны, метрика «актуальность БЗ ≤ 24 ч» и аудируемость не работают. **Митигация:** при первом запуске `build_index.py` рассчитать SHA-256 и записать в реестр; добавить проверку в CI.
 3. **Запуск без API-ключей возвращает все НД с `confidence: 0.0`.** Stub-провайдер не считает это ошибкой, поэтому метрика «успешность» в `PipelineStats` будет 100% даже без реальной LLM. Это маскирует регрессии в качестве. **Митигация:** в `use_test_data_mode: true` логировать предупреждение, если хотя бы один провайдер не вернул content; в CI требовать наличие реальных ключей или явный флаг `--allow-stub`.
 4. **`HybridRetriever._hash_embedding` — fallback-эмбеддинг.** Если `sentence-transformers` не установлен / модель `bge-m3` не загружена, используется bag-of-tokens hash-эмбеддинг (256 dim). В тестах это работает, но в production такое поведение должно явно фейлить запуск, а не молча деградировать. **Митигация:** добавить флаг `strict_embedder: true` в `configs/embedding_config.yaml` и проверку на старте.
@@ -209,3 +210,4 @@
 | Версия | Дата | Изменение |
 |--------|------|-----------|
 | v1 | 2026-05-12 | Первая версия аудита: структура, согласованность документации, тестируемость FR/НФТ, соответствие кода документации, стандарты, рекомендации, критические риски и best-practice. |
+| v1.1 | 2026-05-12 | Закрытие риска 9.1 (RAG context masking): реализовано в `src/llm/masking.py::mask_context_chunks`, вызывается в `LLMClient.classify_requirement`. Добавлены тесты `test_classify_requirement_masks_requirement_and_context` и `test_classify_requirement_fails_without_context_masking`. Обновлены разделы 9.1 и Executive Summary. |
