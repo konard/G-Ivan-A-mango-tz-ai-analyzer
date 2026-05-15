@@ -1,10 +1,12 @@
 """Hybrid retriever combining BM25 lexical search and dense vector search.
 
-Ranking is fused with Reciprocal Rank Fusion (RRF). The retriever is designed
-so that it works with a real ChromaDB / sentence-transformers stack when those
-libraries are installed, but it also degrades gracefully to an in-memory
-implementation when they are unavailable (handy for unit tests and CI without
-heavy ML dependencies).
+Ranking is fused with Reciprocal Rank Fusion (RRF). The default embedder is a
+real ``sentence-transformers`` ``BAAI/bge-m3`` model — there is **no** silent
+fallback to a toy hash embedder. When the model cannot be loaded and no
+explicit embedder is injected, the retriever raises ``RuntimeError`` (strict
+embedder mode introduced in issue #45). Tests and offline scripts may opt out
+by passing an embedder callable directly to :class:`HybridRetriever` or
+:func:`build_retriever`.
 
 Unified chunk format returned by :meth:`HybridRetriever.search` and by
 :func:`reciprocal_rank_fusion`::
@@ -73,10 +75,12 @@ def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
 
 
 def _hash_embedding(text: str, dim: int = 256) -> List[float]:
-    """Deterministic bag-of-tokens hash embedding used as a fallback.
+    """Deterministic bag-of-tokens hash embedding.
 
-    Good enough for similarity ordering in tests; should be replaced by a real
-    embedding model (e.g. ``BAAI/bge-m3``) in production.
+    This is **never** used as a silent fallback by the retriever (strict
+    embedder mode, see :func:`_load_dense_embedder`). It is kept only for
+    test fixtures that pass it explicitly via ``embedder=_hash_embedding`` and
+    for benchmarking utilities that need a tokenizer-free baseline.
     """
     vec = [0.0] * dim
     for token in _tokenize(text):
@@ -86,6 +90,45 @@ def _hash_embedding(text: str, dim: int = 256) -> List[float]:
     if norm:
         vec = [v / norm for v in vec]
     return vec
+
+
+_STRICT_EMBEDDER_ERROR = "Embedding model unavailable. Strict mode enabled."
+
+
+def _load_dense_embedder(
+    config: Optional[Dict[str, Any]] = None,
+) -> Callable[[str], Sequence[float]]:
+    """Load the real sentence-transformers embedder defined by ``config``.
+
+    Raises:
+        RuntimeError: When the embedding model cannot be loaded. The error
+            message is fixed to ``"Embedding model unavailable. Strict mode
+            enabled."`` per the issue #45 contract.
+    """
+    cfg = config or {}
+    model_name = str(cfg.get("model_name", "BAAI/bge-m3"))
+    normalize = bool(cfg.get("normalize_embeddings", True))
+
+    try:
+        from sentence_transformers import SentenceTransformer  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(_STRICT_EMBEDDER_ERROR) from exc
+
+    try:
+        model = SentenceTransformer(model_name)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(_STRICT_EMBEDDER_ERROR) from exc
+
+    def _embed(text: str) -> List[float]:
+        vector = model.encode(
+            text,
+            normalize_embeddings=normalize,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        return [float(x) for x in vector.tolist()]
+
+    return _embed
 
 
 def _page_from_metadata(metadata: Mapping[str, Any]) -> str:
@@ -247,7 +290,11 @@ class HybridRetriever:
         embedder: Optional[Callable[[str], Sequence[float]]] = None,
     ) -> None:
         self.config = config or {}
-        self._embedder = embedder or _hash_embedding
+        # Strict embedder mode (issue #45): when no embedder is injected by the
+        # caller we *must* load the configured sentence-transformers model.
+        # Failure to load raises ``RuntimeError`` — silently falling back to a
+        # toy hash embedder would mask data quality regressions.
+        self._embedder = embedder if embedder is not None else _load_dense_embedder(self.config)
         self._documents: List[_Document] = []
         self._bm25: Optional[_BM25] = None
 
@@ -371,9 +418,14 @@ class HybridRetriever:
 def build_retriever(
     documents: Optional[Iterable[Dict[str, Any]]] = None,
     config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
+    embedder: Optional[Callable[[str], Sequence[float]]] = None,
 ) -> HybridRetriever:
-    """Convenience factory: build a retriever and pre-index documents."""
-    retriever = HybridRetriever.from_config(config_path=config_path)
+    """Convenience factory: build a retriever and pre-index documents.
+
+    ``embedder`` exists for tests and offline scripts only. Production callers
+    should rely on the default sentence-transformers loader (strict mode).
+    """
+    retriever = HybridRetriever.from_config(config_path=config_path, embedder=embedder)
     if documents:
         retriever.add_documents(documents)
     return retriever

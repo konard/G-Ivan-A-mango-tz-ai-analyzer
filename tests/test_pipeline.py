@@ -11,7 +11,7 @@ pytest.importorskip("openpyxl")
 
 from src.llm.client import LLMClient  # noqa: E402
 from src.pipeline import run_analysis  # noqa: E402
-from src.rag.retriever import build_retriever  # noqa: E402
+from src.rag.retriever import _hash_embedding, build_retriever  # noqa: E402
 
 
 def test_run_analysis_end_to_end(tmp_path: Path) -> None:
@@ -32,7 +32,7 @@ def test_run_analysis_end_to_end(tmp_path: Path) -> None:
             "metadata": {"section": "3.1"},
         },
     ]
-    retriever = build_retriever(documents=documents)
+    retriever = build_retriever(documents=documents, embedder=_hash_embedding)
 
     def fake_provider(system_prompt, user_message, cfg):
         return json.dumps(
@@ -75,3 +75,40 @@ def test_run_analysis_end_to_end(tmp_path: Path) -> None:
     assert "[Статус]" in df.columns
     assert "[Комментарий]" in df.columns
     assert (df["[Статус]"] == "Да").all()
+
+
+def test_run_analysis_marks_failed_row_as_oshibka(tmp_path: Path) -> None:
+    """Per issue #45 MUST 3: a per-row provider failure becomes [Статус]=Ошибка."""
+    input_file = tmp_path / "tz.xlsx"
+    pd.DataFrame({"Требование": ["Совсем сломанное требование"]}).to_excel(
+        input_file, index=False
+    )
+
+    retriever = build_retriever(documents=[], embedder=_hash_embedding)
+
+    def boom_provider(system_prompt, user_message, cfg):
+        raise RuntimeError("simulated provider outage")
+
+    llm_client = LLMClient(
+        llm_config={
+            "active_provider": "boom",
+            "fallback_providers": ["boom"],
+            "providers": {"boom": {"priority": 1, "retry_attempts": 1}},
+        },
+        provider_callers={"boom": boom_provider},
+    )
+
+    output_file = tmp_path / "result.xlsx"
+    stats = run_analysis(
+        input_file=str(input_file),
+        output_file=str(output_file),
+        retriever=retriever,
+        llm_client=llm_client,
+    )
+
+    assert stats.total == 1
+    assert stats.success == 0
+    assert stats.errors == 1
+
+    df = pd.read_excel(output_file)
+    assert df["[Статус]"].iloc[0] == "Ошибка"

@@ -1,3 +1,20 @@
+# =============================================================================
+# Mango TZ AI Analyzer — runtime dependencies
+# =============================================================================
+#
+# Cloud / Streamlit Cloud install order (CPU-only torch must be installed
+# from the official PyTorch index, otherwise sentence-transformers will pull
+# in the CUDA build and break the deployment slot):
+#
+#   pip install --no-cache-dir -r requirements.txt
+#   pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+#
+# Local dev install (any platform with a working PyTorch wheel):
+#
+#   pip install --no-cache-dir -r requirements.txt
+#
+# =============================================================================
+
 streamlit>=1.32
 
 # Core data handling
@@ -7,10 +24,10 @@ openpyxl>=3.1
 # Config / serialization
 PyYAML>=6.0
 
-# RAG (optional but recommended in production)
-# rank_bm25>=0.2.2
-# chromadb>=0.4.24
-# sentence-transformers>=2.7.0
+# RAG core (MVP — must be installed in production and CI)
+rank_bm25>=0.2.2
+chromadb>=0.4.24
+sentence-transformers>=2.7.0
 
 # LLM HTTP transport
 requests>=2.31

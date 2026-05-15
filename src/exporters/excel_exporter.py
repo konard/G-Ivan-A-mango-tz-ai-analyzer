@@ -1,12 +1,18 @@
 """Excel exporter for classification results.
 
-The exporter preserves the original ТЗ structure (all columns from the input
-workbook) and appends the columns mandated by issue #39:
+Per issue #45 MUST 4 (FR-06): the output workbook preserves the original ТЗ
+columns and appends **exactly five** result columns, in this order::
 
-    [Статус], [Комментарий], [Цитаты], [Confidence]
+    [Статус], [Комментарий], [Confidence], [RunID]
 
-It also adds operational columns ([Провайдер], [Требует ревью], [Ошибка],
-[Рекомендация]) so that BAs and auditors get the full picture in one file.
+The fourth functional column ``[RunID]`` carries the pipeline ``run_id`` on
+every row so the UI can filter / re-run only errored rows without needing the
+user to re-upload the source file.
+
+Operational columns ([Цитаты], [Уверенность], [Рекомендация], [Требует ревью],
+[Провайдер], [Ошибка]) that were emitted in pre-MVP revisions are intentionally
+dropped — the MVP is a read-only review surface (no inline edit, no extended
+audit columns).
 """
 
 from __future__ import annotations
@@ -20,46 +26,28 @@ logger = logging.getLogger(__name__)
 RESULT_COLUMNS: List[str] = [
     "[Статус]",
     "[Комментарий]",
-    "[Цитаты]",
     "[Confidence]",
-    "[Уверенность]",  # alias retained for backward compatibility with audits
-    "[Рекомендация]",
-    "[Требует ревью]",
-    "[Провайдер]",
-    "[Ошибка]",
+    "[RunID]",
 ]
 
 
-def _format_citations(citations: List[Dict[str, Any]]) -> str:
-    if not citations:
-        return ""
-    parts: List[str] = []
-    for citation in citations:
-        source = citation.get("source", "?")
-        section = citation.get("section", "")
-        quote = citation.get("quote", "")
-        chunk = f"{source}"
-        if section:
-            chunk += f" / {section}"
-        if quote:
-            chunk += f": «{quote}»"
-        parts.append(chunk)
-    return "\n".join(parts)
-
-
-def _classification_row(item: Dict[str, Any]) -> Dict[str, Any]:
+def _classification_row(item: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     classification = item.get("classification") or {}
     confidence = float(classification.get("confidence", 0.0) or 0.0)
     return {
         "[Статус]": classification.get("classification", "НД"),
         "[Комментарий]": classification.get("reasoning", ""),
-        "[Цитаты]": _format_citations(classification.get("citations", [])),
         "[Confidence]": confidence,
-        "[Уверенность]": confidence,
-        "[Рекомендация]": classification.get("recommendations", ""),
-        "[Требует ревью]": "Да" if classification.get("requires_ba_review") else "Нет",
-        "[Провайдер]": classification.get("provider", ""),
-        "[Ошибка]": item.get("error", ""),
+        "[RunID]": run_id,
+    }
+
+
+def _empty_row(run_id: str) -> Dict[str, Any]:
+    return {
+        "[Статус]": "",
+        "[Комментарий]": "",
+        "[Confidence]": 0.0,
+        "[RunID]": run_id,
     }
 
 
@@ -79,10 +67,10 @@ def save_results(
         output_file: Destination ``.xlsx`` path.
         sheet_name: Worksheet name to write to.
         source_file: Optional input workbook path. When supplied, the exporter
-            preserves the source columns and appends the classification
-            columns next to them (row order is matched by 1-based ``id``).
-        run_id: Optional pipeline run identifier. Stored as a worksheet-level
-            metadata column ``[run_id]`` if provided.
+            preserves the source columns and appends the four MVP columns next
+            to them (row order is matched by 1-based ``id``).
+        run_id: Pipeline run identifier. Written into ``[RunID]`` on every row
+            so the UI's retry-only-errors workflow can filter without re-upload.
 
     Returns:
         The absolute path of the saved workbook.
@@ -94,17 +82,14 @@ def save_results(
             "pandas is required to export results. Install it with `pip install pandas openpyxl`."
         ) from exc
 
+    run_id = run_id or ""
     results_list: List[Dict[str, Any]] = list(results)
-    classification_rows = [_classification_row(item) for item in results_list]
+    classification_rows = [_classification_row(item, run_id) for item in results_list]
 
     source_df = _load_source_dataframe(source_file)
     if source_df is not None and not source_df.empty:
-        # Match each result back to its source row by 1-based id.
         n = len(source_df)
-        empty_row = {col: "" for col in RESULT_COLUMNS}
-        empty_row["[Confidence]"] = 0.0
-        empty_row["[Уверенность]"] = 0.0
-        appended_rows: List[Dict[str, Any]] = [dict(empty_row) for _ in range(n)]
+        appended_rows: List[Dict[str, Any]] = [_empty_row(run_id) for _ in range(n)]
         for item, row in zip(results_list, classification_rows):
             idx = int(item.get("id", 0)) - 1
             if 0 <= idx < n:
@@ -112,8 +97,7 @@ def save_results(
         appended_df = pd.DataFrame(appended_rows, columns=RESULT_COLUMNS)
         merged = pd.concat([source_df.reset_index(drop=True), appended_df], axis=1)
     else:
-        # No source workbook supplied — fall back to a minimal results-only sheet.
-        minimal_rows = []
+        minimal_rows: List[Dict[str, Any]] = []
         for item, row in zip(results_list, classification_rows):
             minimal_rows.append(
                 {
@@ -123,9 +107,6 @@ def save_results(
                 }
             )
         merged = pd.DataFrame(minimal_rows)
-
-    if run_id:
-        merged["[run_id]"] = run_id
 
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
