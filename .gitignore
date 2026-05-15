@@ -1,12 +1,26 @@
-```gitignore
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Test coverage
+# Test coverage / caches
 .coverage
-htmlcov/
 .coverage.*
-```
+htmlcov/
+.pytest_cache/
+
+# Runtime artifacts
+logs/
+output/
+chroma_data/
+
+# Secrets
+.env
+.env.*
+
+# Excel artifacts (allow tracked samples)
+*.xlsx
+!test_data/**/*.xlsx
+!knowledge_base/sources/**/*.xlsx
+!data/incoming/*.xlsx

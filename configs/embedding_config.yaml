@@ -3,6 +3,8 @@ max_length: 512
 normalize_embeddings: true
 chunk_size: 250
 chunk_overlap: 50
+top_k: 3
+rrf_k: 60
 vector_store:
   type: "chromadb"
   persist_directory: "./chroma_data"

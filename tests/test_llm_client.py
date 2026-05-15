@@ -189,6 +189,47 @@ def test_classify_requirement_masks_requirement_and_context() -> None:
     assert "[DOMAIN]" in user_msg
 
 
+def test_classify_requirement_masks_in_test_data_mode() -> None:
+    """``use_test_data_mode: true`` MUST force masking before the HTTP call."""
+    captured_user_messages: list[str] = []
+
+    def capture_provider(system_prompt, user_message, cfg):
+        captured_user_messages.append(user_message)
+        return json.dumps(
+            {
+                "classification": "НД",
+                "confidence": 0.0,
+                "reasoning": "test-mode masking check",
+                "citations": [],
+                "requires_ba_review": True,
+            },
+            ensure_ascii=False,
+        )
+
+    client = LLMClient(
+        llm_config={
+            "use_test_data_mode": True,
+            "active_provider": "test",
+            "providers": {"test": {"priority": 1, "retry_attempts": 1}},
+        },
+        provider_callers={"test": capture_provider},
+    )
+
+    client.classify_requirement(
+        "Send to ivan@example.com from +71234567890",
+        context_chunks=[{"text": "Internal host: api.mango.internal", "source": "kb.md"}],
+    )
+
+    assert captured_user_messages, "Provider was never invoked"
+    user_msg = captured_user_messages[0]
+    assert "ivan@example.com" not in user_msg
+    assert "+71234567890" not in user_msg
+    assert "api.mango.internal" not in user_msg
+    assert "[EMAIL]" in user_msg
+    assert "[PHONE]" in user_msg
+    assert "[DOMAIN]" in user_msg
+
+
 def test_classify_requirement_fails_without_context_masking() -> None:
     """Test that would fail if context_chunks were not masked.
     

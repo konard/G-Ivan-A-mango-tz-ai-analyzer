@@ -1,14 +1,19 @@
 """LLM response JSON extraction and validation.
 
-This module provides functions for extracting JSON from LLM responses
-and validating them against the classification schema defined in
+This module provides functions for extracting JSON from LLM responses and
+validating them against the classification schema defined in
 ``prompts/system_classifier_v1.0.md``.
 
 Validation rules:
-- classification must be one of: Да, Нет, Частично, НД
-- reasoning must be a non-empty string
-- citations must be a list; required for non-НД classifications
-- confidence must be a float in [0.0, 1.0]
+- ``classification`` must be one of: ``Да``, ``Нет``, ``Частично``, ``НД``.
+- ``reasoning`` must be a non-empty string.
+- ``citations`` must be a list; at least one entry is required for any non-``НД``
+  classification (mandatory citation rule from the system prompt).
+- ``confidence`` must be a float in ``[0.0, 1.0]``.
+
+A strict Pydantic model is preferred when ``pydantic`` is installed. If it is
+not available, a manual fallback enforces the same rules so that the pipeline
+still runs in slim environments (e.g. minimal CI images).
 """
 
 from __future__ import annotations
@@ -19,15 +24,81 @@ from typing import Any, Dict, List
 _VALID_CATEGORIES = {"Да", "Нет", "Частично", "НД"}
 
 
+try:  # Pydantic v2 is the project pin (see requirements.txt).
+    from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+    _PYDANTIC_AVAILABLE = True
+
+    class Citation(BaseModel):
+        """A single citation from the retrieved context."""
+
+        model_config = ConfigDict(extra="ignore")
+
+        source: str = Field(..., description="Source filename or document id")
+        section: str = Field("", description="Section / page label")
+        quote: str = Field("", description="Exact quote from the context")
+
+        @field_validator("source")
+        @classmethod
+        def _source_not_blank(cls, value: str) -> str:
+            if not value or not value.strip():
+                raise ValueError("citation.source must not be empty")
+            return value
+
+    class ClassificationPayload(BaseModel):
+        """Strict schema for the LLM classification response."""
+
+        model_config = ConfigDict(extra="ignore")
+
+        requirement_id: str = ""
+        requirement_text: str = ""
+        classification: str
+        confidence: float = 0.0
+        reasoning: str
+        citations: List[Citation] = Field(default_factory=list)
+        requires_ba_review: bool = False
+        recommendations: str = ""
+
+        @field_validator("classification")
+        @classmethod
+        def _validate_classification(cls, value: str) -> str:
+            if value not in _VALID_CATEGORIES:
+                raise ValueError(
+                    f"Invalid classification value: {value!r}. "
+                    f"Expected one of {sorted(_VALID_CATEGORIES)}."
+                )
+            return value
+
+        @field_validator("reasoning")
+        @classmethod
+        def _validate_reasoning(cls, value: str) -> str:
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("'reasoning' must be a non-empty string")
+            return value
+
+        @field_validator("confidence")
+        @classmethod
+        def _validate_confidence(cls, value: float) -> float:
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError("'confidence' must be within [0.0, 1.0]")
+            return float(value)
+
+except ImportError:  # pragma: no cover - exercised only when pydantic is absent
+    _PYDANTIC_AVAILABLE = False
+    Citation = None  # type: ignore[assignment]
+    ClassificationPayload = None  # type: ignore[assignment]
+    ValidationError = Exception  # type: ignore[assignment]
+
+
 def extract_json(payload: str) -> Dict[str, Any]:
     """Parse the first JSON object found in ``payload``.
-    
+
     Args:
         payload: Raw LLM response string that may contain JSON.
-        
+
     Returns:
         Parsed JSON as dict.
-        
+
     Raises:
         ValueError: If no valid JSON object can be extracted.
     """
@@ -43,44 +114,73 @@ def extract_json(payload: str) -> Dict[str, Any]:
         return json.loads(payload[start : end + 1])
 
 
-def validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate LLM classification response against schema.
-    
-    Args:
-        payload: Dict containing classification result fields.
-        
-    Returns:
-        Validated payload with normalized types.
-        
-    Raises:
-        ValueError: If payload fails validation rules.
-    """
+def _validate_with_pydantic(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        model = ClassificationPayload(**payload)  # type: ignore[misc]
+    except ValidationError as exc:
+        raise ValueError(f"LLM payload failed schema validation: {exc}") from exc
+
+    data = model.model_dump()
+    if data["classification"] != "НД" and not data["citations"]:
+        raise ValueError(
+            "'citations' must contain at least one entry for non-НД classifications"
+        )
+    # Normalise auto-review flag: BA review is mandatory below the prompt threshold.
+    data["requires_ba_review"] = bool(
+        payload.get("requires_ba_review", data["confidence"] < 0.75)
+    )
+    return data
+
+
+def _validate_manually(payload: Dict[str, Any]) -> Dict[str, Any]:
     classification = payload.get("classification")
     if classification not in _VALID_CATEGORIES:
         raise ValueError(f"Invalid classification value: {classification!r}")
-    
-    if not isinstance(payload.get("reasoning"), str) or not payload["reasoning"].strip():
+
+    reasoning = payload.get("reasoning")
+    if not isinstance(reasoning, str) or not reasoning.strip():
         raise ValueError("Missing or empty 'reasoning'")
-    
+
     citations = payload.get("citations", []) or []
     if not isinstance(citations, list):
         raise ValueError("'citations' must be a list")
-    
+
     if classification != "НД" and not citations:
-        raise ValueError("'citations' must contain at least one entry for non-НД classifications")
-    
+        raise ValueError(
+            "'citations' must contain at least one entry for non-НД classifications"
+        )
+
     confidence = payload.get("confidence", 0.0)
     try:
         confidence = float(confidence)
     except (TypeError, ValueError) as exc:
         raise ValueError("'confidence' must be a float") from exc
-    
+
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("'confidence' must be within [0.0, 1.0]")
-    
+
     payload["confidence"] = confidence
-    payload["requires_ba_review"] = bool(payload.get("requires_ba_review", confidence < 0.75))
+    payload["requires_ba_review"] = bool(
+        payload.get("requires_ba_review", confidence < 0.75)
+    )
     payload["recommendations"] = str(payload.get("recommendations", "") or "")
     payload["citations"] = citations
-    
     return payload
+
+
+def validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate an LLM classification response against the schema.
+
+    Args:
+        payload: Dict containing classification result fields.
+
+    Returns:
+        A new dict with normalised types (matches the schema in
+        ``prompts/system_classifier_v1.0.md``).
+
+    Raises:
+        ValueError: If the payload fails validation rules.
+    """
+    if _PYDANTIC_AVAILABLE:
+        return _validate_with_pydantic(payload)
+    return _validate_manually(payload)
