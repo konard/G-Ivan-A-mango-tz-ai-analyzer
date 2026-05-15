@@ -1,1 +1,1 @@
-"""Quality and performance evaluation scripts (issue #45 SHOULD 1)."""
+"""Quality evaluation utilities for the TZ analyzer pipeline."""
