@@ -2,9 +2,17 @@
 
 The client loads provider settings from ``configs/llm_config.yaml`` and masking
 regexes from ``configs/masking_rules.yaml``. It tries providers in priority
-order (Qwen → DeepSeek → GigaChat → Yandex by default) and returns a validated
-JSON payload that matches the schema defined in
+order (Qwen → DeepSeek → GigaChat → YandexGPT by default) and returns a
+validated JSON payload that matches the schema defined in
 ``prompts/system_classifier_v1.0.md``.
+
+Network policy (per ADR-001 and issue #39):
+- Per-call HTTP timeout: 30 seconds.
+- Retry policy per provider: ``retry_attempts`` (default 3) with exponential
+  backoff for retriable errors (HTTP 5xx, HTTP 429, ``ConnectionError``,
+  ``Timeout``).
+- Non-retriable failures (invalid JSON, schema violations, auth errors) trip
+  the next provider in the fallback chain immediately.
 
 For environments without API keys, a ``stub`` provider produces a deterministic
 ``НД`` response so the pipeline can be exercised end-to-end in tests.
@@ -22,18 +30,25 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import yaml
 
-from src.llm.masking import mask_text, mask_context_chunks  # noqa: F401 - re-export for backward compatibility
-from src.llm.validator import extract_json, validate_payload  # noqa: F401 - re-export for backward compatibility
+from src.llm.masking import mask_text, mask_context_chunks  # noqa: F401 - re-export
+from src.llm.validator import extract_json, validate_payload  # noqa: F401 - re-export
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_CONFIG_PATH = "configs/llm_config.yaml"
 DEFAULT_MASKING_CONFIG_PATH = "configs/masking_rules.yaml"
 DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
+HTTP_TIMEOUT_SECONDS = 30
+DEFAULT_RETRY_ATTEMPTS = 3
+RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class LLMError(RuntimeError):
     """Raised when every configured provider has failed."""
+
+
+class RetriableProviderError(RuntimeError):
+    """Network / rate-limit failure that should trigger a retry."""
 
 
 @dataclass
@@ -61,8 +76,63 @@ class ClassificationResult:
         }
 
 
-# ----------------------------------------------------------------- LLM client --
 ProviderCall = Callable[[str, str, Dict[str, Any]], str]
+
+
+def _load_llm_config(path: str) -> Dict[str, Any]:
+    file_path = Path(path)
+    if not file_path.exists():
+        logger.warning("Config file not found: %s", file_path)
+        return {}
+    try:
+        return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        logger.warning("Failed to parse %s: %s", file_path, exc)
+        return {}
+
+
+def _resolve_env(*candidates: Optional[str]) -> Optional[str]:
+    for name in candidates:
+        if not name:
+            continue
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def _http_post_with_retries(
+    url: str,
+    *,
+    headers: Dict[str, str],
+    json_payload: Dict[str, Any],
+    timeout: int = HTTP_TIMEOUT_SECONDS,
+) -> Any:
+    """Issue an HTTP POST and translate transport errors into our taxonomy.
+
+    Returns the parsed JSON body on success. Raises
+    :class:`RetriableProviderError` for HTTP 5xx, HTTP 429, ``ConnectionError``
+    and timeouts; other errors propagate as is so the caller can decide to skip
+    to the next provider immediately.
+    """
+    try:
+        import requests  # type: ignore
+    except ImportError as exc:  # pragma: no cover - guarded by requirements.txt
+        raise RuntimeError("`requests` library is required for LLM providers") from exc
+
+    try:
+        response = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+    except requests.exceptions.ConnectionError as exc:
+        raise RetriableProviderError(f"Connection error to {url}: {exc}") from exc
+    except requests.exceptions.Timeout as exc:
+        raise RetriableProviderError(f"Timeout calling {url}: {exc}") from exc
+
+    if response.status_code in RETRIABLE_STATUS_CODES:
+        raise RetriableProviderError(
+            f"Retriable HTTP {response.status_code} from {url}: {response.text[:200]}"
+        )
+    response.raise_for_status()
+    return response.json()
 
 
 class LLMClient:
@@ -104,19 +174,6 @@ class LLMClient:
         )
 
     @staticmethod
-    def _load_llm_config(path: str) -> Dict[str, Any]:
-        """Load LLM configuration from YAML file."""
-        file_path = Path(path)
-        if not file_path.exists():
-            logger.warning("Config file not found: %s", file_path)
-            return {}
-        try:
-            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:
-            logger.warning("Failed to parse %s: %s", file_path, exc)
-            return {}
-
-    @staticmethod
     def _load_system_prompt(prompt_path: str) -> str:
         path = Path(prompt_path)
         if path.exists():
@@ -130,6 +187,10 @@ class LLMClient:
 
     def mask_text(self, text: str) -> str:
         return mask_text(text, config_path=self.masking_config_path)
+
+    @property
+    def use_test_data_mode(self) -> bool:
+        return bool(self.config.get("use_test_data_mode", False))
 
     def _ordered_providers(self) -> List[tuple[str, Dict[str, Any]]]:
         providers = self.config.get("providers", {}) or {}
@@ -152,20 +213,25 @@ class LLMClient:
         requirement_id: Optional[str] = None,
     ) -> ClassificationResult:
         """Run masking → provider fallback → JSON validation for one requirement.
-        
-        Both the requirement text and RAG context chunks are masked before
-        being sent to the LLM provider to prevent data leakage.
+
+        Masking is always applied to the requirement text and context chunks
+        BEFORE the HTTP request is built, regardless of the provider. When
+        ``use_test_data_mode`` is enabled the masking step is forced and any
+        future opt-out is ignored, per the data residency requirements in
+        ``docs/CONCEPT.md``.
         """
         if not req_text or not req_text.strip():
             raise ValueError("Requirement text must not be empty")
 
-        # Mask requirement text
         masked_req = self.mask_text(req_text)
-        
-        # Mask context chunks to prevent sensitive data leakage
-        masked_chunks = mask_context_chunks(list(context_chunks), config_path=self.masking_config_path)
+        masked_chunks = mask_context_chunks(
+            list(context_chunks), config_path=self.masking_config_path
+        )
+
+        if self.use_test_data_mode:
+            logger.debug("use_test_data_mode=true: masking enforced before LLM call")
+
         context_block = self._format_context(masked_chunks)
-        
         user_message = self._build_user_message(masked_req, context_block, requirement_id)
 
         last_error: Optional[Exception] = None
@@ -174,7 +240,7 @@ class LLMClient:
             if caller is None:
                 logger.warning("No caller registered for provider %s; skipping.", provider_name)
                 continue
-            retries = max(1, int(provider_cfg.get("retry_attempts", 1)))
+            retries = max(1, int(provider_cfg.get("retry_attempts", DEFAULT_RETRY_ATTEMPTS)))
             for attempt in range(1, retries + 1):
                 try:
                     raw_response = caller(self.system_prompt, user_message, provider_cfg)
@@ -190,10 +256,10 @@ class LLMClient:
                         provider=provider_name,
                         raw=payload,
                     )
-                except Exception as exc:  # noqa: BLE001 - we keep trying other providers
+                except RetriableProviderError as exc:
                     last_error = exc
                     logger.warning(
-                        "Provider %s failed (attempt %d/%d): %s",
+                        "Retriable failure on provider %s (attempt %d/%d): %s",
                         provider_name,
                         attempt,
                         retries,
@@ -201,6 +267,16 @@ class LLMClient:
                     )
                     if attempt < retries:
                         time.sleep(min(2 ** (attempt - 1), 5))
+                        continue
+                    break  # exhaust retries → move to next provider
+                except Exception as exc:  # noqa: BLE001 - try the next provider
+                    last_error = exc
+                    logger.warning(
+                        "Non-retriable failure on provider %s: %s (skipping retries)",
+                        provider_name,
+                        exc,
+                    )
+                    break
         raise LLMError(f"All providers failed; last error: {last_error}")
 
     # ------------------------------------------------------------- formatting --
@@ -211,8 +287,8 @@ class LLMClient:
         lines: List[str] = []
         for chunk in chunks:
             source = chunk.get("source", "unknown")
-            section = (chunk.get("metadata") or {}).get("section", "")
-            header = f"[{source}{(' — ' + section) if section else ''}]"
+            page = chunk.get("page") or (chunk.get("metadata") or {}).get("section", "")
+            header = f"[{source}{(' — ' + page) if page else ''}]"
             lines.append(f"{header}\n{chunk.get('text', '').strip()}")
         return "\n\n".join(lines)
 
@@ -229,10 +305,7 @@ class LLMClient:
 
 # -------------------------------------------------------- provider call stubs --
 def _call_stub(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
-    """Offline stub used when no real provider is reachable.
-
-    Returns a conservative ``НД`` response that still satisfies the JSON schema.
-    """
+    """Offline stub used when no real provider is reachable."""
     payload = {
         "requirement_id": "",
         "requirement_text": "",
@@ -249,43 +322,23 @@ def _call_stub(system_prompt: str, user_message: str, config: Dict[str, Any]) ->
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _resolve_env(*candidates: Optional[str]) -> Optional[str]:
-    for name in candidates:
-        if not name:
-            continue
-        value = os.environ.get(name)
-        if value:
-            return value
-    return None
-
-
 def _call_dashscope(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
     api_key = _resolve_env(config.get("api_key_env"))
     if not api_key:
         raise RuntimeError("DashScope API key is not configured")
-    try:
-        import requests  # type: ignore
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("`requests` library is required for DashScope") from exc
-
-    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-    payload = {
-        "model": config.get("model", "qwen-max"),
-        "temperature": config.get("temperature", 0.1),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "response_format": {"type": "json_object"},
-    }
-    response = requests.post(
-        url,
+    data = _http_post_with_retries(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=60,
+        json_payload={
+            "model": config.get("model", "qwen-max"),
+            "temperature": config.get("temperature", 0.1),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "response_format": {"type": "json_object"},
+        },
     )
-    response.raise_for_status()
-    data = response.json()
     return data["choices"][0]["message"]["content"]
 
 
@@ -293,29 +346,19 @@ def _call_deepseek(system_prompt: str, user_message: str, config: Dict[str, Any]
     api_key = _resolve_env(config.get("api_key_env"))
     if not api_key:
         raise RuntimeError("DeepSeek API key is not configured")
-    try:
-        import requests  # type: ignore
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("`requests` library is required for DeepSeek") from exc
-
-    url = "https://api.deepseek.com/chat/completions"
-    payload = {
-        "model": config.get("model", "deepseek-chat"),
-        "temperature": config.get("temperature", 0.1),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "response_format": {"type": "json_object"},
-    }
-    response = requests.post(
-        url,
+    data = _http_post_with_retries(
+        "https://api.deepseek.com/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=60,
+        json_payload={
+            "model": config.get("model", "deepseek-chat"),
+            "temperature": config.get("temperature", 0.1),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "response_format": {"type": "json_object"},
+        },
     )
-    response.raise_for_status()
-    data = response.json()
     return data["choices"][0]["message"]["content"]
 
 
@@ -328,24 +371,30 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("`requests` library is required for GigaChat") from exc
 
-    token_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-    token_resp = requests.post(
-        token_url,
-        headers={
-            "Authorization": f"Basic {credentials}",
-            "RqUID": "00000000-0000-0000-0000-000000000000",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={"scope": "GIGACHAT_API_PERS"},
-        timeout=30,
-    )
+    try:
+        token_resp = requests.post(
+            "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+            headers={
+                "Authorization": f"Basic {credentials}",
+                "RqUID": "00000000-0000-0000-0000-000000000000",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={"scope": "GIGACHAT_API_PERS"},
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.ConnectionError as exc:
+        raise RetriableProviderError(f"GigaChat auth connection error: {exc}") from exc
+    except requests.exceptions.Timeout as exc:
+        raise RetriableProviderError(f"GigaChat auth timeout: {exc}") from exc
+    if token_resp.status_code in RETRIABLE_STATUS_CODES:
+        raise RetriableProviderError(f"GigaChat auth HTTP {token_resp.status_code}")
     token_resp.raise_for_status()
     access_token = token_resp.json()["access_token"]
 
-    chat_resp = requests.post(
+    data = _http_post_with_retries(
         "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-        json={
+        json_payload={
             "model": config.get("model", "GigaChat-Pro"),
             "temperature": config.get("temperature", 0.1),
             "messages": [
@@ -353,10 +402,8 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
                 {"role": "user", "content": user_message},
             ],
         },
-        timeout=60,
     )
-    chat_resp.raise_for_status()
-    return chat_resp.json()["choices"][0]["message"]["content"]
+    return data["choices"][0]["message"]["content"]
 
 
 def _call_yandex(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
@@ -364,24 +411,19 @@ def _call_yandex(system_prompt: str, user_message: str, config: Dict[str, Any]) 
     iam_token = _resolve_env(config.get("iam_token_env"))
     if not folder_id or not iam_token:
         raise RuntimeError("Yandex folder_id / IAM token are not configured")
-    try:
-        import requests  # type: ignore
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("`requests` library is required for YandexGPT") from exc
-
-    payload = {
-        "modelUri": f"gpt://{folder_id}/{config.get('model', 'yandexgpt-pro')}",
-        "completionOptions": {"temperature": config.get("temperature", 0.1), "maxTokens": 2000},
-        "messages": [
-            {"role": "system", "text": system_prompt},
-            {"role": "user", "text": user_message},
-        ],
-    }
-    response = requests.post(
+    data = _http_post_with_retries(
         "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
         headers={"Authorization": f"Bearer {iam_token}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=60,
+        json_payload={
+            "modelUri": f"gpt://{folder_id}/{config.get('model', 'yandexgpt-pro')}",
+            "completionOptions": {
+                "temperature": config.get("temperature", 0.1),
+                "maxTokens": 2000,
+            },
+            "messages": [
+                {"role": "system", "text": system_prompt},
+                {"role": "user", "text": user_message},
+            ],
+        },
     )
-    response.raise_for_status()
-    return response.json()["result"]["alternatives"][0]["message"]["text"]
+    return data["result"]["alternatives"][0]["message"]["text"]

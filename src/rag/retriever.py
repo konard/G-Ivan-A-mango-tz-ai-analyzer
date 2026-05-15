@@ -5,6 +5,16 @@ so that it works with a real ChromaDB / sentence-transformers stack when those
 libraries are installed, but it also degrades gracefully to an in-memory
 implementation when they are unavailable (handy for unit tests and CI without
 heavy ML dependencies).
+
+Unified chunk format returned by :meth:`HybridRetriever.search` and by
+:func:`reciprocal_rank_fusion`::
+
+    {
+        "text": str,    # chunk text
+        "source": str,  # file name or document id
+        "page": str,    # section / page label (empty string if unknown)
+        "score": float, # fused RRF score
+    }
 """
 
 from __future__ import annotations
@@ -14,7 +24,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import yaml
 
@@ -22,20 +32,26 @@ logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
 
+DEFAULT_EMBEDDING_CONFIG_PATH = "configs/embedding_config.yaml"
+DEFAULT_TOP_K = 3
+DEFAULT_RRF_K = 60
+
 
 @dataclass
 class RetrievedChunk:
-    """A single retrieval result."""
+    """A single retrieval result with the project-wide unified format."""
 
     text: str
     source: str
     score: float
+    page: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "source": self.source,
             "text": self.text,
+            "source": self.source,
+            "page": self.page,
             "score": self.score,
             "metadata": self.metadata,
         }
@@ -70,6 +86,104 @@ def _hash_embedding(text: str, dim: int = 256) -> List[float]:
     if norm:
         vec = [v / norm for v in vec]
     return vec
+
+
+def _page_from_metadata(metadata: Mapping[str, Any]) -> str:
+    """Pick a reasonable ``page`` label from metadata.
+
+    Looks at common keys: ``page``, ``section``, ``chapter``. Returns ``""``
+    when nothing is available so the field is always present in results.
+    """
+    if not metadata:
+        return ""
+    for key in ("page", "section", "chapter"):
+        value = metadata.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _result_key(item: Mapping[str, Any]) -> str:
+    """Build a stable identifier for an RRF input item.
+
+    Prefers an explicit ``id`` field, falls back to ``(source, page, text)``.
+    """
+    if not isinstance(item, Mapping):
+        return repr(item)
+    identifier = item.get("id")
+    if identifier is not None:
+        return f"id::{identifier}"
+    source = item.get("source", "")
+    page = item.get("page") or _page_from_metadata(item.get("metadata") or {})
+    text = item.get("text", "")
+    return f"sp::{source}::{page}::{text}"
+
+
+def reciprocal_rank_fusion(
+    bm25_results: Sequence[Mapping[str, Any]],
+    dense_results: Sequence[Mapping[str, Any]],
+    k: int = DEFAULT_RRF_K,
+    top_k: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Fuse two ranked result lists with Reciprocal Rank Fusion.
+
+    The RRF score for each item is::
+
+        score = Σ_over_lists  1 / (k + rank)
+
+    where ``rank`` is 1-based. Items are deduplicated by ``id`` if present,
+    otherwise by the tuple ``(source, page, text)``.
+
+    Args:
+        bm25_results: Ranked list of BM25 chunks (best first). Each chunk must
+            be a mapping that at least contains ``text`` and ``source``.
+        dense_results: Ranked list of dense (vector) chunks, same shape.
+        k: RRF constant. Larger values flatten contributions of top ranks.
+        top_k: Optional cap on the number of fused results. ``None`` keeps all.
+
+    Returns:
+        A ranked list of unified chunk dicts::
+
+            {"text": str, "source": str, "page": str, "score": float,
+             "metadata": dict}
+
+        ``metadata`` is included as a courtesy for downstream consumers but
+        the four primary keys above are guaranteed by the issue contract.
+    """
+    if k <= 0:
+        raise ValueError("RRF k must be positive")
+
+    fused: Dict[str, Dict[str, Any]] = {}
+
+    def _absorb(items: Iterable[Mapping[str, Any]]) -> None:
+        for rank, item in enumerate(items or [], start=1):
+            if not isinstance(item, Mapping):
+                continue
+            key = _result_key(item)
+            contribution = 1.0 / (k + rank)
+            existing = fused.get(key)
+            if existing is None:
+                metadata = dict(item.get("metadata") or {})
+                page = item.get("page") or _page_from_metadata(metadata)
+                fused[key] = {
+                    "text": str(item.get("text", "")),
+                    "source": str(item.get("source", "unknown")),
+                    "page": str(page or ""),
+                    "score": contribution,
+                    "metadata": metadata,
+                }
+            else:
+                existing["score"] += contribution
+
+    _absorb(bm25_results)
+    _absorb(dense_results)
+
+    ranked = sorted(fused.values(), key=lambda item: item["score"], reverse=True)
+    for item in ranked:
+        item["score"] = round(item["score"], 6)
+    if top_k is not None:
+        ranked = ranked[: max(0, int(top_k))]
+    return ranked
 
 
 class _BM25:
@@ -119,6 +233,10 @@ class _Document:
     tokens: List[str]
     embedding: List[float]
 
+    @property
+    def page(self) -> str:
+        return _page_from_metadata(self.metadata)
+
 
 class HybridRetriever:
     """Hybrid BM25 + dense retriever with RRF re-ranking."""
@@ -133,11 +251,19 @@ class HybridRetriever:
         self._documents: List[_Document] = []
         self._bm25: Optional[_BM25] = None
 
+    @property
+    def top_k(self) -> int:
+        return int(self.config.get("top_k", DEFAULT_TOP_K) or DEFAULT_TOP_K)
+
+    @property
+    def rrf_k(self) -> int:
+        return int(self.config.get("rrf_k", DEFAULT_RRF_K) or DEFAULT_RRF_K)
+
     # ------------------------------------------------------------------ load --
     @classmethod
     def from_config(
         cls,
-        config_path: str = "configs/embedding_config.yaml",
+        config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
         embedder: Optional[Callable[[str], Sequence[float]]] = None,
     ) -> "HybridRetriever":
         config: Dict[str, Any] = {}
@@ -181,17 +307,21 @@ class HybridRetriever:
         self._bm25 = _BM25([doc.tokens for doc in self._documents])
 
     # --------------------------------------------------------------- search --
-    def search(self, query: str, top_k: int = 3, rrf_k: int = 60) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        rrf_k: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Run hybrid search.
 
-        Args:
-            query: Natural-language query (typically a requirement text).
-            top_k: Number of chunks to return.
-            rrf_k: RRF constant. Larger values flatten ranking contributions.
+        Defaults for ``top_k`` and ``rrf_k`` are read from
+        ``configs/embedding_config.yaml`` (keys ``top_k``, ``rrf_k``). Callers
+        may override either value, but the configuration is the single source
+        of truth.
 
-        Returns:
-            A list of dictionaries shaped as
-            ``{"source": str, "text": str, "score": float, "metadata": {...}}``.
+        Returns a list of unified chunk dicts shaped as
+        ``{"text", "source", "page", "score", "metadata"}``.
         """
         if not query or not query.strip():
             return []
@@ -199,56 +329,48 @@ class HybridRetriever:
             logger.warning("HybridRetriever.search called with no indexed documents.")
             return []
 
+        effective_top_k = int(top_k) if top_k is not None else self.top_k
+        effective_rrf_k = int(rrf_k) if rrf_k is not None else self.rrf_k
+
         query_tokens = _tokenize(query)
-        bm25_scores = self._bm25.get_scores(query_tokens) if self._bm25 else [0.0] * len(self._documents)
+        bm25_scores = (
+            self._bm25.get_scores(query_tokens) if self._bm25 else [0.0] * len(self._documents)
+        )
         query_vec = list(self._embedder(query))
         dense_scores = [_cosine_similarity(query_vec, doc.embedding) for doc in self._documents]
 
-        bm25_rank = self._ranks_from_scores(bm25_scores)
-        dense_rank = self._ranks_from_scores(dense_scores)
+        bm25_results = self._ranked_results(bm25_scores)
+        dense_results = self._ranked_results(dense_scores)
 
-        fused: List[tuple[int, float]] = []
-        for idx in range(len(self._documents)):
-            score = 0.0
-            if bm25_rank[idx] is not None:
-                score += 1.0 / (rrf_k + bm25_rank[idx])
-            if dense_rank[idx] is not None:
-                score += 1.0 / (rrf_k + dense_rank[idx])
-            fused.append((idx, score))
+        return reciprocal_rank_fusion(
+            bm25_results=bm25_results,
+            dense_results=dense_results,
+            k=effective_rrf_k,
+            top_k=effective_top_k,
+        )
 
-        fused.sort(key=lambda item: item[1], reverse=True)
+    def _ranked_results(self, scores: Sequence[float]) -> List[Dict[str, Any]]:
+        """Order documents by raw score (desc) and emit chunk dicts."""
+        order = [i for i in sorted(range(len(scores)), key=lambda i: scores[i], reverse=True) if scores[i] > 0.0]
         results: List[Dict[str, Any]] = []
-        for idx, score in fused[:top_k]:
-            if score <= 0.0:
-                continue
+        for idx in order:
             doc = self._documents[idx]
             results.append(
-                RetrievedChunk(
-                    text=doc.text,
-                    source=doc.source,
-                    score=round(score, 6),
-                    metadata=doc.metadata,
-                ).to_dict()
+                {
+                    "id": f"{doc.source}#{idx}",
+                    "text": doc.text,
+                    "source": doc.source,
+                    "page": doc.page,
+                    "score": float(scores[idx]),
+                    "metadata": doc.metadata,
+                }
             )
         return results
-
-    @staticmethod
-    def _ranks_from_scores(scores: Sequence[float]) -> List[Optional[int]]:
-        """Convert raw scores to 1-based ranks, ``None`` for zero/negative scores."""
-        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-        ranks: List[Optional[int]] = [None] * len(scores)
-        rank = 1
-        for idx in order:
-            if scores[idx] <= 0.0:
-                continue
-            ranks[idx] = rank
-            rank += 1
-        return ranks
 
 
 def build_retriever(
     documents: Optional[Iterable[Dict[str, Any]]] = None,
-    config_path: str = "configs/embedding_config.yaml",
+    config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
 ) -> HybridRetriever:
     """Convenience factory: build a retriever and pre-index documents."""
     retriever = HybridRetriever.from_config(config_path=config_path)
