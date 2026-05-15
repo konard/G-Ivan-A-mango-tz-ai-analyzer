@@ -6,11 +6,14 @@ order (Qwen → DeepSeek → GigaChat → YandexGPT by default) and returns a
 validated JSON payload that matches the schema defined in
 ``prompts/system_classifier_v1.0.md``.
 
-Network policy (per ADR-001 and issue #39):
+Network policy (per ADR-001 and issues #39 / #45):
 - Per-call HTTP timeout: 30 seconds.
-- Retry policy per provider: ``retry_attempts`` (default 3) with exponential
-  backoff for retriable errors (HTTP 5xx, HTTP 429, ``ConnectionError``,
-  ``Timeout``).
+- Retry policy per provider: up to 3 attempts with a fixed exponential
+  backoff schedule of **5s → 15s → 45s** for retriable errors (HTTP 5xx,
+  HTTP 429, ``ConnectionError``, ``Timeout``). The schedule is the wait
+  *before* each retry, so attempt 1 → 5s → attempt 2 → 15s → attempt 3 → 45s.
+- LLM calls are issued **sequentially per requirement** (no parallelisation;
+  see CONCEPT v2 ADR-001).
 - Non-retriable failures (invalid JSON, schema violations, auth errors) trip
   the next provider in the fallback chain immediately.
 
@@ -41,6 +44,21 @@ DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
 HTTP_TIMEOUT_SECONDS = 30
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+# Fixed exponential backoff schedule (seconds), per issue #45 MUST 3.
+# index = attempt - 1; clipped to last value if more attempts are configured.
+BACKOFF_SCHEDULE_SECONDS: tuple[int, ...] = (5, 15, 45)
+
+
+def _backoff_delay(attempt: int) -> int:
+    """Return the seconds to wait before retry attempt ``attempt`` (1-based).
+
+    For attempts beyond the schedule the final delay (45s) is reused so the
+    behaviour stays deterministic when ``retry_attempts`` is misconfigured.
+    """
+    if attempt <= 0:
+        return 0
+    idx = min(attempt - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)
+    return BACKOFF_SCHEDULE_SECONDS[idx]
 
 
 class LLMError(RuntimeError):
@@ -266,7 +284,7 @@ class LLMClient:
                         exc,
                     )
                     if attempt < retries:
-                        time.sleep(min(2 ** (attempt - 1), 5))
+                        time.sleep(_backoff_delay(attempt))
                         continue
                     break  # exhaust retries → move to next provider
                 except Exception as exc:  # noqa: BLE001 - try the next provider

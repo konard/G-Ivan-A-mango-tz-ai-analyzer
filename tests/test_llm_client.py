@@ -6,7 +6,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.llm.client import LLMClient, LLMError, mask_text  # noqa: E402
+from src.llm.client import (  # noqa: E402
+    BACKOFF_SCHEDULE_SECONDS,
+    LLMClient,
+    LLMError,
+    RetriableProviderError,
+    _backoff_delay,
+    mask_text,
+)
 
 
 def test_mask_text_email_and_phone(tmp_path: Path) -> None:
@@ -268,3 +275,51 @@ def test_classify_requirement_fails_without_context_masking() -> None:
     assert "secret-api.internal.corp" not in user_msg, \
         "Context chunk was not masked - sensitive data leaked to LLM!"
     assert "[DOMAIN]" in user_msg, "Domain masking was not applied to context"
+
+
+def test_backoff_schedule_matches_spec() -> None:
+    """Issue #45 MUST 3: fixed schedule 5s → 15s → 45s before retries."""
+    assert BACKOFF_SCHEDULE_SECONDS == (5, 15, 45)
+    assert _backoff_delay(1) == 5
+    assert _backoff_delay(2) == 15
+    assert _backoff_delay(3) == 45
+    # Beyond the schedule we clamp to the last delay rather than blowing up.
+    assert _backoff_delay(4) == 45
+    assert _backoff_delay(0) == 0
+
+
+def test_retriable_failure_uses_backoff_schedule(monkeypatch) -> None:
+    """A provider that recovers after two transient errors must use 5s and 15s waits."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("src.llm.client.time.sleep", lambda s: sleeps.append(s))
+
+    attempts = {"n": 0}
+
+    def flaky(system_prompt, user_message, cfg):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise RetriableProviderError("simulated 503")
+        return json.dumps(
+            {
+                "classification": "Да",
+                "confidence": 0.8,
+                "reasoning": "Подтверждено после ретраев.",
+                "citations": [{"source": "doc.md", "section": "1", "quote": "ok"}],
+                "requires_ba_review": False,
+            },
+            ensure_ascii=False,
+        )
+
+    client = LLMClient(
+        llm_config={
+            "active_provider": "primary",
+            "fallback_providers": ["primary"],
+            "providers": {"primary": {"priority": 1, "retry_attempts": 3}},
+        },
+        provider_callers={"primary": flaky},
+    )
+    result = client.classify_requirement("Что-то", context_chunks=[])
+    assert result.classification == "Да"
+    assert attempts["n"] == 3
+    # Waits should be the first two entries of the schedule, in order.
+    assert sleeps == [5, 15]

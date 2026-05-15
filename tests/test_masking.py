@@ -1,12 +1,15 @@
 """Tests for data masking functionality.
 
-Tests cover all patterns from configs/masking_rules.yaml:
+Tests cover the MVP patterns from ``configs/masking_rules.yaml`` (issue #45):
 - Email addresses
 - Russian phone numbers (+7 format)
 - IP addresses
 - Internal domains (mango, internal, corp, local)
-- Legal entity names (ООО/АО/ПАО/ЗАО/НАО/ОАО)
-- Individual entrepreneur surnames (ИП)
+
+ФИО / legal entity / ИП masking is intentionally OUT OF SCOPE for MVP — the
+former regression tests for ``[LEGAL_ENTITY]`` / ``[IE_SURNAME]`` have been
+replaced by a single guard test (:class:`TestDeferredPatterns`) that asserts
+those tokens never appear in masking output.
 """
 
 import logging
@@ -235,53 +238,22 @@ class TestCombinedSensitiveData:
         assert "[DOMAIN]" in domain_result
 
 
-class TestLegalEntityMasking:
-    """Test masking of Russian legal entity names (FR-05)."""
+class TestDeferredPatterns:
+    """ФИО / legal-entity / ИП masking is deferred (issue #45).
 
-    @pytest.mark.parametrize(
-        "text, expected",
-        [
-            ('Поставка для ООО "Вектор"', "Поставка для ООО [LEGAL_ENTITY]"),
-            ("Заказчик: АО Прогресс", "Заказчик: АО [LEGAL_ENTITY]"),
-            ('Работа с ооо "тест"', "Работа с ооо [LEGAL_ENTITY]"),
-            ('Договор с ПАО "Сбербанк"', "Договор с ПАО [LEGAL_ENTITY]"),
-            ('Сторона ЗАО "Альфа"', "Сторона ЗАО [LEGAL_ENTITY]"),
-            ('Поставщик НАО "Бета"', "Поставщик НАО [LEGAL_ENTITY]"),
-            ('Подрядчик ОАО "Гамма"', "Подрядчик ОАО [LEGAL_ENTITY]"),
-        ],
-    )
-    def test_legal_entity_replacements(self, text, expected):
-        """Prefix must be preserved, name replaced with [LEGAL_ENTITY]."""
-        assert mask_text(text) == expected
+    These tests guard against regressions that would re-introduce the
+    out-of-scope replacements. The masker must leave such tokens untouched.
+    """
 
-    def test_legal_entity_name_is_not_leaked(self):
-        """Original entity name must be absent from the output."""
+    def test_legal_entity_token_is_not_emitted(self):
         result = mask_text('Соглашение с ООО "СекретКомпани"')
-        assert "СекретКомпани" not in result
-        assert "[LEGAL_ENTITY]" in result
-        assert result.startswith("Соглашение с ООО")
+        assert "[LEGAL_ENTITY]" not in result
+        assert 'ООО "СекретКомпани"' in result
 
-
-class TestIEMasking:
-    """Test masking of individual entrepreneur (ИП) surnames (FR-05)."""
-
-    @pytest.mark.parametrize(
-        "text, expected",
-        [
-            ("Ответственный: ИП Смирнов", "Ответственный: ИП [IE_SURNAME]"),
-            ('ИП "Петров"', "ИП [IE_SURNAME]"),
-            ("Договор с ИП Иванов от 01.01", "Договор с ИП [IE_SURNAME] от 01.01"),
-        ],
-    )
-    def test_ie_replacements(self, text, expected):
-        """Prefix ИП must be preserved, surname/token replaced."""
-        assert mask_text(text) == expected
-
-    def test_ie_surname_is_not_leaked(self):
-        """Original surname must not appear in the output."""
+    def test_ie_token_is_not_emitted(self):
         result = mask_text("Контрагент ИП Сидоров подписал")
-        assert "Сидоров" not in result
-        assert "ИП [IE_SURNAME]" in result
+        assert "[IE_SURNAME]" not in result
+        assert "ИП Сидоров" in result
 
 
 class TestMaskingLogging:
@@ -290,10 +262,10 @@ class TestMaskingLogging:
     def test_debug_log_does_not_contain_original_value(self, caplog):
         """Debug logs must reference pattern name only, never the secret."""
         caplog.set_level(logging.DEBUG, logger="src.llm.masking")
-        mask_text('ООО "СекретноеИмя"', context="req-42")
+        mask_text("Контакт admin@secret-corp.io req-42", context="req-42")
         joined = "\n".join(record.getMessage() for record in caplog.records)
-        assert "СекретноеИмя" not in joined
-        assert "legal_entity_name" in joined
+        assert "admin@secret-corp.io" not in joined
+        assert "email" in joined
         assert "req-42" in joined
 
 

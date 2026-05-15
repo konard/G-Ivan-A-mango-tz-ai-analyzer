@@ -1,14 +1,18 @@
 """Excel exporter for classification results.
 
-The exporter preserves the original ТЗ structure (all columns from the input
-workbook) and appends the **minimal MVP set** mandated by CONCEPT.md §4 FR-06:
+Per issue #45 MUST 4 (FR-06): the output workbook preserves the original ТЗ
+columns and appends **exactly five** result columns, in this order::
 
     [Статус], [Комментарий], [Confidence], [RunID]
 
-Additional operational columns ([Цитаты], [Рекомендация], [Требует ревью],
-[Провайдер], [Ошибка]) are emitted alongside the MVP four — the extended schema
-is captured in ADR-002 (post-pilot) but kept available today for BAs and
-auditors who need the full picture in one file.
+The fourth functional column ``[RunID]`` carries the pipeline ``run_id`` on
+every row so the UI can filter / re-run only errored rows without needing the
+user to re-upload the source file.
+
+Operational columns ([Цитаты], [Уверенность], [Рекомендация], [Требует ревью],
+[Провайдер], [Ошибка]) that were emitted in pre-MVP revisions are intentionally
+dropped — the MVP is a read-only review surface (no inline edit, no extended
+audit columns).
 """
 
 from __future__ import annotations
@@ -19,43 +23,15 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-MVP_COLUMNS: List[str] = [
+RESULT_COLUMNS: List[str] = [
     "[Статус]",
     "[Комментарий]",
     "[Confidence]",
     "[RunID]",
 ]
 
-EXTENDED_COLUMNS: List[str] = [
-    "[Цитаты]",
-    "[Уверенность]",  # alias retained for backward compatibility with audits
-    "[Рекомендация]",
-    "[Требует ревью]",
-    "[Провайдер]",
-    "[Ошибка]",
-]
 
-RESULT_COLUMNS: List[str] = MVP_COLUMNS + EXTENDED_COLUMNS
-
-
-def _format_citations(citations: List[Dict[str, Any]]) -> str:
-    if not citations:
-        return ""
-    parts: List[str] = []
-    for citation in citations:
-        source = citation.get("source", "?")
-        section = citation.get("section", "")
-        quote = citation.get("quote", "")
-        chunk = f"{source}"
-        if section:
-            chunk += f" / {section}"
-        if quote:
-            chunk += f": «{quote}»"
-        parts.append(chunk)
-    return "\n".join(parts)
-
-
-def _classification_row(item: Dict[str, Any], run_id: str = "") -> Dict[str, Any]:
+def _classification_row(item: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     classification = item.get("classification") or {}
     confidence = float(classification.get("confidence", 0.0) or 0.0)
     return {
@@ -63,12 +39,15 @@ def _classification_row(item: Dict[str, Any], run_id: str = "") -> Dict[str, Any
         "[Комментарий]": classification.get("reasoning", ""),
         "[Confidence]": confidence,
         "[RunID]": run_id,
-        "[Цитаты]": _format_citations(classification.get("citations", [])),
-        "[Уверенность]": confidence,
-        "[Рекомендация]": classification.get("recommendations", ""),
-        "[Требует ревью]": "Да" if classification.get("requires_ba_review") else "Нет",
-        "[Провайдер]": classification.get("provider", ""),
-        "[Ошибка]": item.get("error", ""),
+    }
+
+
+def _empty_row(run_id: str) -> Dict[str, Any]:
+    return {
+        "[Статус]": "",
+        "[Комментарий]": "",
+        "[Confidence]": 0.0,
+        "[RunID]": run_id,
     }
 
 
@@ -88,10 +67,10 @@ def save_results(
         output_file: Destination ``.xlsx`` path.
         sheet_name: Worksheet name to write to.
         source_file: Optional input workbook path. When supplied, the exporter
-            preserves the source columns and appends the classification
-            columns next to them (row order is matched by 1-based ``id``).
-        run_id: Optional pipeline run identifier. Stored as a worksheet-level
-            metadata column ``[run_id]`` if provided.
+            preserves the source columns and appends the four MVP columns next
+            to them (row order is matched by 1-based ``id``).
+        run_id: Pipeline run identifier. Written into ``[RunID]`` on every row
+            so the UI's retry-only-errors workflow can filter without re-upload.
 
     Returns:
         The absolute path of the saved workbook.
@@ -103,19 +82,14 @@ def save_results(
             "pandas is required to export results. Install it with `pip install pandas openpyxl`."
         ) from exc
 
+    run_id = run_id or ""
     results_list: List[Dict[str, Any]] = list(results)
-    run_id_value = run_id or ""
-    classification_rows = [_classification_row(item, run_id_value) for item in results_list]
+    classification_rows = [_classification_row(item, run_id) for item in results_list]
 
     source_df = _load_source_dataframe(source_file)
     if source_df is not None and not source_df.empty:
-        # Match each result back to its source row by 1-based id.
         n = len(source_df)
-        empty_row = {col: "" for col in RESULT_COLUMNS}
-        empty_row["[Confidence]"] = 0.0
-        empty_row["[Уверенность]"] = 0.0
-        empty_row["[RunID]"] = run_id_value
-        appended_rows: List[Dict[str, Any]] = [dict(empty_row) for _ in range(n)]
+        appended_rows: List[Dict[str, Any]] = [_empty_row(run_id) for _ in range(n)]
         for item, row in zip(results_list, classification_rows):
             idx = int(item.get("id", 0)) - 1
             if 0 <= idx < n:
@@ -123,8 +97,7 @@ def save_results(
         appended_df = pd.DataFrame(appended_rows, columns=RESULT_COLUMNS)
         merged = pd.concat([source_df.reset_index(drop=True), appended_df], axis=1)
     else:
-        # No source workbook supplied — fall back to a minimal results-only sheet.
-        minimal_rows = []
+        minimal_rows: List[Dict[str, Any]] = []
         for item, row in zip(results_list, classification_rows):
             minimal_rows.append(
                 {
@@ -138,7 +111,7 @@ def save_results(
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_excel(output_path, sheet_name=sheet_name, index=False)
-    logger.info("Saved %d rows to %s", len(merged), output_path, extra={"run_id": run_id_value} if run_id_value else {})
+    logger.info("Saved %d rows to %s", len(merged), output_path)
     return output_path
 
 

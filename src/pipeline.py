@@ -6,8 +6,9 @@ Steps:
     3. Load (or build) the knowledge-base index.
     4. For each requirement: hybrid search → mask → LLM classify.
     5. Append classification columns to the original DataFrame.
-    6. Export to Excel with the source structure intact plus the columns
-       ``[Статус]``, ``[Комментарий]``, ``[Цитаты]``, ``[Confidence]``.
+    6. Export to Excel with the source structure intact plus the four MVP
+       columns ``[Статус]``, ``[Комментарий]``, ``[Confidence]``, ``[RunID]``
+       (FR-06, issue #45).
 
 Run as a CLI::
 
@@ -235,13 +236,16 @@ def run_analysis(
             logger.error(
                 "Failed to classify requirement: %s", exc, extra=log_extra, exc_info=True
             )
+            # Per issue #45 MUST 3: on full failure mark the row as «Ошибка»
+            # without breaking the pipeline. The retry workflow in the UI uses
+            # this status to filter rows that should be re-run.
             results.append(
                 {
                     "id": req["id"],
                     "text": req_text,
                     "error": str(exc),
                     "classification": {
-                        "classification": "НД",
+                        "classification": "Ошибка",
                         "reasoning": f"Ошибка обработки: {exc}",
                         "citations": [],
                         "confidence": 0.0,

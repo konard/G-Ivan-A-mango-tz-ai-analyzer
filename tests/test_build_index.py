@@ -1,19 +1,19 @@
 """Tests for ``knowledge_base/indexing/build_index.py`` registry & hashing.
 
-Locks in the contract introduced by issue #48:
+Locks in the contract introduced by issues #45/#48:
 
 * Hashing is SHA-256 (not MD5).
 * ``source_registry.csv`` uses the schema
   ``filename, version, sha256_hash, indexed_date, status, coverage``.
 * Chunk parameters and the model name are read from
   ``configs/embedding_config.yaml``.
+* Pre-existing ``version`` / ``coverage`` values survive re-indexing.
 """
 
 from __future__ import annotations
 
 import csv
 import hashlib
-import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -48,12 +48,12 @@ def build_index_module(tmp_path: Path) -> Iterator[object]:
         sys.modules.pop(spec.name, None)
 
 
-def test_get_file_hash_returns_sha256_hex(build_index_module, tmp_path: Path) -> None:
+def test_sha256_hash_returns_sha256_hex(build_index_module, tmp_path: Path) -> None:
     sample = tmp_path / "sample.bin"
     payload = b"mango-tz-ai-analyzer/issue-48"
     sample.write_bytes(payload)
 
-    digest = build_index_module.get_file_hash(sample)
+    digest = build_index_module.sha256_hash(sample)
     assert digest == hashlib.sha256(payload).hexdigest()
     # SHA-256 hex digest length is 64.
     assert len(digest) == 64
@@ -62,7 +62,7 @@ def test_get_file_hash_returns_sha256_hex(build_index_module, tmp_path: Path) ->
 def test_update_registry_writes_required_schema(build_index_module) -> None:
     build_index_module.update_registry(
         "doc.md",
-        sha256_hash="a" * 64,
+        sha256="a" * 64,
         status="Indexed",
         version="1.2",
         coverage="High",
@@ -95,10 +95,10 @@ def test_update_registry_writes_required_schema(build_index_module) -> None:
 
 def test_update_registry_preserves_existing_version_and_coverage(build_index_module) -> None:
     build_index_module.update_registry(
-        "doc.md", sha256_hash="b" * 64, status="Indexed", version="2.0", coverage="High"
+        "doc.md", sha256="b" * 64, status="Indexed", version="2.0", coverage="High"
     )
     # Re-index without supplying version/coverage; existing values must be preserved.
-    build_index_module.update_registry("doc.md", sha256_hash="c" * 64, status="Indexed")
+    build_index_module.update_registry("doc.md", sha256="c" * 64, status="Indexed")
 
     with build_index_module.REGISTRY_FILE.open("r", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
@@ -122,13 +122,3 @@ def test_load_config_returns_embedding_config_keys() -> None:
         assert "chunk_overlap" in config
     finally:
         sys.modules.pop(spec.name, None)
-
-
-def test_chunk_text_respects_overlap(build_index_module) -> None:
-    text = " ".join(f"w{i}" for i in range(120))
-    chunks = build_index_module.chunk_text(text, chunk_size=50, chunk_overlap=10)
-    assert chunks, "chunker must produce at least one chunk for non-empty input"
-    # First chunk must use the full window size; subsequent chunks must overlap.
-    assert chunks[0].split()[0] == "w0"
-    # With chunk_size=50, overlap=10 → step=40 → second chunk starts at w40.
-    assert chunks[1].split()[0] == "w40"

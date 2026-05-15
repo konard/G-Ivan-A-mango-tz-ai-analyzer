@@ -1,3 +1,7 @@
+# MVP masking patterns — issue #45 MUST 3.
+# Scope per CONCEPT v2.1: ONLY Email, Phone (RU), IP, Domain.
+# ФИО / legal entity / individual entrepreneur masking is intentionally
+# deferred and MUST NOT be re-enabled without a separate decision.
 patterns:
   - name: "email"
     regex: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
@@ -11,14 +15,6 @@ patterns:
   - name: "internal_domain"
     regex: "\\b(?:[a-zA-Z0-9-]+\\.)?(mango|internal|corp|local)\\.[a-z]{2,}\\b"
     replacement: "[DOMAIN]"
-  - name: "legal_entity_name"
-    regex: "(?i)\\b(ООО|АО|ПАО|ЗАО|НАО|ОАО)\\s*\"?([^\"]+)\"?"
-    replacement: "\\1 [LEGAL_ENTITY]"
-    description: "Masks legal entity name following a Russian prefix (ООО, АО, etc.); preserves the prefix."
-  - name: "ie_surname"
-    regex: "(?i)\\b(ИП)\\s+(\\S+)"
-    replacement: "\\1 [IE_SURNAME]"
-    description: "Masks the token (surname or quoted name) directly after the ИП prefix."
 exclude_sections:
   - "контактное лицо"
   - "email"
