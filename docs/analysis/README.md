@@ -21,3 +21,4 @@
 ## Пример
 - [`2026-05-12_review_mvp-context_v1.md`](2026-05-12_review_mvp-context_v1.md) — ревью концепции MVP в контексте задач классификации требований Да/Нет/Частично/НД.
 - [`2026-05-13_analysis_next-docs-implementation-task_v1.md`](2026-05-13_analysis_next-docs-implementation-task_v1.md) — формулировка следующей приоритетной задачи по документации и коду на основе аудита репозитория.
+- [`2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md`](2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md) — анализ состояния репозитория, оценка готовности MVP, профиль нагрузки и рекомендации по доработке (issue #35).
