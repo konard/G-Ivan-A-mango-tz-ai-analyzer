@@ -39,3 +39,6 @@ tqdm>=4.66
 # Document parsing (Knowledge Base)
 pypdf>=5.0.0
 python-docx>=1.0.0
+
+# .env loader for the KB Test UI (src/ui/app.py)
+python-dotenv>=1.0.0
