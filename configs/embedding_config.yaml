@@ -8,4 +8,4 @@ rrf_k: 60
 vector_store:
   type: "chromadb"
   persist_directory: "./chroma_data"
-  collection_name: "mango_kb"
+  collection_name: "clarify_engine_kb"

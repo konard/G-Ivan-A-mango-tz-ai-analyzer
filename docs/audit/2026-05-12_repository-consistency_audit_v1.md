@@ -59,7 +59,7 @@
 ### 2.4. `knowledge_base/`
 | Файл/Каталог | Статус | Комментарий |
 |--------------|--------|-------------|
-| `knowledge_base/sources/` | ✅ | 4 источника (`api_guide_excerpt.pdf`, `functional_list_sample.xlsx`, `mango_crm_integration.md`, `user_guide_call_recording.pdf`). |
+| `knowledge_base/sources/` | ✅ | 4 источника (`api_guide_excerpt.pdf`, `functional_list_sample.xlsx`, `crm_integration.md`, `user_guide_call_recording.pdf`). |
 | `knowledge_base/metadata/source_registry.csv` | ✅ | Реестр с полями `filename, version, sha256_hash, indexed_date, status, coverage`. Хеши помечены как `pending` — нужно посчитать при первой реальной индексации. |
 | `knowledge_base/indexing/build_index.py` | ⚠️ | Скрипт-заглушка: логирует наличие источников, но не индексирует. TODO явно зафиксированы. |
 | `knowledge_base/indexing/chunk_config.yaml` | ✅ | Файл существует (пустой) — дублирует параметры из `configs/embedding_config.yaml`. Рекомендуется удалить дубликат либо разделить ответственности. |

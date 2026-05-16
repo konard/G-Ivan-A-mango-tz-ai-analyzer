@@ -4,7 +4,7 @@ Tests cover the MVP patterns from ``configs/masking_rules.yaml`` (issue #45):
 - Email addresses
 - Russian phone numbers (+7 format)
 - IP addresses
-- Internal domains (mango, internal, corp, local)
+- Internal domains (internal, corp, local)
 
 ФИО / legal entity / ИП masking is intentionally OUT OF SCOPE for MVP — the
 former regression tests for ``[LEGAL_ENTITY]`` / ``[IE_SURNAME]`` have been
@@ -105,9 +105,9 @@ class TestIPMasking:
 class TestInternalDomainMasking:
     """Test internal domain masking."""
 
-    def test_mask_mango_domain(self):
-        """Test masking mango internal domain."""
-        text = "See docs at docs.mango.internal for details"
+    def test_mask_internal_subdomain(self):
+        """Test masking a subdomain of an internal TLD."""
+        text = "See docs at docs.internal.example for details"
         result = mask_text(text)
         assert "[DOMAIN]" in result
 
@@ -125,13 +125,13 @@ class TestInternalDomainMasking:
 
     def test_mask_local_domain(self):
         """Test masking local domain."""
-        # Pattern matches domains like corp.local, mango.internal where the 
-        # keyword (mango|internal|corp|local) is part of the TLD structure
-        text = "Dev server: portal.corp.local or api.mango.internal"
+        # Pattern matches domains like corp.local, internal.example where the
+        # keyword (internal|corp|local) is part of the TLD structure
+        text = "Dev server: portal.corp.local or api.internal.example"
         result = mask_text(text)
         assert "[DOMAIN]" in result
         assert "portal.corp.local" not in result
-        assert "api.mango.internal" not in result
+        assert "api.internal.example" not in result
 
 
 class TestContextChunksMasking:
@@ -223,7 +223,7 @@ class TestCombinedSensitiveData:
     def test_mask_all_patterns_in_one_text(self):
         """Test masking all pattern types in single text."""
         text = (
-            "Contact admin@mango.internal at +71234567890. "
+            "Contact admin@internal.example at +71234567890. "
             "Server: 192.168.1.1. Backup: backup@corp.local"
         )
         result = mask_text(text)

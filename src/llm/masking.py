@@ -9,7 +9,7 @@ Supported patterns (as of v2):
 - Email addresses
 - Russian phone numbers (+7 format)
 - IP addresses
-- Internal domains (mango, internal, corp, local)
+- Internal domains (internal, corp, local)
 - Legal entity names following Russian prefixes (ООО, АО, ПАО, ЗАО, НАО, ОАО)
 - Surnames following the ИП (individual entrepreneur) prefix
 

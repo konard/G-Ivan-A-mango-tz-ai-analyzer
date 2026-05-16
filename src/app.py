@@ -40,7 +40,7 @@ from src.pipeline import PipelineStats, run_analysis
 logger = logging.getLogger(__name__)
 
 APP_VERSION = "0.3.0-mvp"
-REPO_URL = "https://github.com/G-Ivan-A/mango-tz-ai-analyzer"
+REPO_URL = "https://github.com/G-Ivan-A/clarify-engine-ai"
 ISSUES_URL = f"{REPO_URL}/issues"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "configs" / "llm_config.yaml"
@@ -435,7 +435,7 @@ def render_ba_help_tab() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Mango TZ AI Analyzer",
+        page_title="Clarify Engine AI",
         page_icon="🤖",
         layout="wide",
     )

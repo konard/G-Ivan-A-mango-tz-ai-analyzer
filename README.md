@@ -1,4 +1,4 @@
-# mango-tz-ai-analyzer
+# clarify-engine-ai
 
 **AI-powered tool for automated analysis of tender requirements (TZ) using RAG architecture.**
 
@@ -6,10 +6,10 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Инструмент для автоматизированного анализа тендерных технических заданий. Классифицирует требования в категории `Да` / `Нет` / `Частично` / `НД` с обязательным цитированием документации (RAG).
+Open-source модуль для работы с требованиями и базой знаний. Классифицирует требования в категории `Да` / `Нет` / `Частично` / `НД` с обязательным цитированием документации (RAG).
 
 > 📌 **Владелец проекта:** [Ivan Gulienko](https://github.com/G-Ivan-A) (независимая разработка).
-> 🏢 **Назначение:** внедрение в процессы Mango Telecom.
+> 🏢 **Назначение:** анализ соответствия тендерных ТЗ функциональности целевой платформы.
 > 🗂️ **Единый источник истины (SSoT):** [`docs/CONCEPT.md`](docs/CONCEPT.md).
 
 ---
@@ -70,7 +70,7 @@ flowchart LR
 - 🚧 **Pilot (In Progress):**
   - переход к микросервисной архитектуре;
   - оркестрация ИИ-агентов и сервисов (n8n / LangGraph);
-  - изоляция базы знаний: доступ к внутренним данным Mango Telecom через защищённые API-шлюзы.
+  - изоляция базы знаний: доступ к внутренним данным целевой платформы через защищённые API-шлюзы.
 - 📅 **Production:** масштабирование до 200 пользователей, GPU-ускорение эмбеддингов.
 
 Подробности — в [`docs/CONCEPT.md`](docs/CONCEPT.md) §8 и [`docs/ADR/`](docs/ADR/).
@@ -81,8 +81,8 @@ flowchart LR
 
 ### 1. Установка зависимостей
 ```bash
-git clone https://github.com/G-Ivan-A/mango-tz-ai-analyzer.git
-cd mango-tz-ai-analyzer
+git clone https://github.com/G-Ivan-A/clarify-engine-ai.git
+cd clarify-engine-ai
 
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -200,7 +200,7 @@ Copyright © 2026 Ivan Gulienko.
 
 Проект распространяется под лицензией **MIT License**. Это означает:
 1. ✅ Вы можете использовать, копировать, изменять и распространять ПО.
-2. ✅ Вы можете использовать его в коммерческих целях (включая Mango Telecom).
+2. ✅ Вы можете использовать его в коммерческих целях.
 3. ⚠️ **Обязательное условие:** при распространении кода или производных работ необходимо сохранить уведомление об авторских правах (Attribution).
 
 Полный текст лицензии — в файле [`LICENSE`](LICENSE).

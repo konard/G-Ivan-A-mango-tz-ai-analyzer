@@ -1,5 +1,5 @@
 # =============================================================================
-# .gitignore — mango-tz-ai-analyzer
+# .gitignore — clarify-engine-ai
 # Order matters: general → specific → whitelist (negations at the end).
 # Working directories MUST stay tracked: knowledge_base/sources/, test_data/,
 # docs/, src/, configs/, prompts/.

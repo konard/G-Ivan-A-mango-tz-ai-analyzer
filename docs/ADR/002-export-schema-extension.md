@@ -3,7 +3,7 @@
 **Status:** Proposed (Post-Pilot)
 **Date:** 2026-05-15
 **Owner:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
-**Связанные документы:** [CONCEPT.md §4 FR-06](../CONCEPT.md), [ADR-001](001-rag-architecture.md), [issue #48](https://github.com/G-Ivan-A/mango-tz-ai-analyzer/issues/48)
+**Связанные документы:** [CONCEPT.md §4 FR-06](../CONCEPT.md), [ADR-001](001-rag-architecture.md), [issue #48](https://github.com/G-Ivan-A/clarify-engine-ai/issues/48)
 
 ---
 

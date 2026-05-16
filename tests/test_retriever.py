@@ -15,7 +15,7 @@ from src.rag.retriever import (  # noqa: E402
 def _sample_docs():
     return [
         {
-            "text": "MANGO CRM поддерживает коннектор Битрикс24 с синхронизацией контактов через REST API.",
+            "text": "Внутренняя CRM поддерживает коннектор Битрикс24 с синхронизацией контактов через REST API.",
             "source": "crm.md",
             "metadata": {"section": "Раздел 4.2"},
         },

@@ -1,4 +1,4 @@
-# Правила для Code Agent проекта mango-tz-ai-analyzer
+# Правила для Code Agent проекта clarify-engine-ai
 agent:
   role: "Code Generator"
   task_source: "GitHub Issues OR explicit prompt"

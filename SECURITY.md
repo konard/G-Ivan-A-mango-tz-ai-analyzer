@@ -1,4 +1,4 @@
-# Security Policy — `mango-tz-ai-analyzer`
+# Security Policy — `clarify-engine-ai`
 
 Документ описывает политику обработки инцидентов безопасности и контакты для эскалации (issue #45 — MAY 1). Применяется ко всем артефактам репозитория: коду, конфигурациям, документации, тестовым данным, базе знаний.
 
@@ -11,7 +11,7 @@
 | Канал | Контакт | Использовать для |
 |-------|---------|------------------|
 | GitHub | [@G-Ivan-A](https://github.com/G-Ivan-A) | Приватные advisories, security-issues. |
-| GitHub Security Advisory | <https://github.com/G-Ivan-A/mango-tz-ai-analyzer/security/advisories/new> | Любая уязвимость до публикации фикса. |
+| GitHub Security Advisory | <https://github.com/G-Ivan-A/clarify-engine-ai/security/advisories/new> | Любая уязвимость до публикации фикса. |
 
 **Запрещено** публиковать детали уязвимости в публичных issues, PR-комментариях, обсуждениях и внешних чатах до выпуска фикса.
 

@@ -50,7 +50,7 @@ def build_index_module(tmp_path: Path) -> Iterator[object]:
 
 def test_sha256_hash_returns_sha256_hex(build_index_module, tmp_path: Path) -> None:
     sample = tmp_path / "sample.bin"
-    payload = b"mango-tz-ai-analyzer/issue-48"
+    payload = b"clarify-engine-ai/issue-48"
     sample.write_bytes(payload)
 
     digest = build_index_module.sha256_hash(sample)

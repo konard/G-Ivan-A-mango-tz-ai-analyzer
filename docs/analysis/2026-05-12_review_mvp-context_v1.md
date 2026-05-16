@@ -8,7 +8,7 @@
 - Code Agent должен выполнять ТОЛЬКО задачи из вкладки Issues
 
 ## ✅ Источник истины для Code Agent
-- GitHub Issues: https://github.com/G-Ivan-A/mango-tz-ai-analyzer/issues
+- GitHub Issues: https://github.com/G-Ivan-A/clarify-engine-ai/issues
 - Product Owner: @G-Ivan-A создаёт и назначает задачи
 - Code Agent: @konard выполняет ТОЛЬКО назначенные Issues
 

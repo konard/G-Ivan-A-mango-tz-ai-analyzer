@@ -175,7 +175,7 @@ def test_classify_requirement_masks_requirement_and_context() -> None:
     # Context chunks with sensitive data
     context_chunks = [
         {"text": "Server IP: 192.168.1.100 is responding", "source": "infra.md"},
-        {"text": "API endpoint: api.mango.internal/docs", "source": "api.md"},
+        {"text": "API endpoint: api.corp.local/docs", "source": "api.md"},
     ]
 
     result = client.classify_requirement(req_text, context_chunks)
@@ -191,7 +191,7 @@ def test_classify_requirement_masks_requirement_and_context() -> None:
 
     # Verify context chunks are masked
     assert "192.168.1.100" not in user_msg
-    assert "api.mango.internal" not in user_msg
+    assert "api.corp.local" not in user_msg
     assert "[IP]" in user_msg
     assert "[DOMAIN]" in user_msg
 
@@ -224,14 +224,14 @@ def test_classify_requirement_masks_in_test_data_mode() -> None:
 
     client.classify_requirement(
         "Send to ivan@example.com from +71234567890",
-        context_chunks=[{"text": "Internal host: api.mango.internal", "source": "kb.md"}],
+        context_chunks=[{"text": "Internal host: api.corp.local", "source": "kb.md"}],
     )
 
     assert captured_user_messages, "Provider was never invoked"
     user_msg = captured_user_messages[0]
     assert "ivan@example.com" not in user_msg
     assert "+71234567890" not in user_msg
-    assert "api.mango.internal" not in user_msg
+    assert "api.corp.local" not in user_msg
     assert "[EMAIL]" in user_msg
     assert "[PHONE]" in user_msg
     assert "[DOMAIN]" in user_msg

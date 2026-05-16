@@ -1,4 +1,4 @@
-# Contributing — `mango-tz-ai-analyzer`
+# Contributing — `clarify-engine-ai`
 
 Этот документ описывает рабочий процесс для всех контрибьюторов проекта (issue #45 — MAY 1). Он намеренно лаконичный: подробные роли и обязанности — в [`docs/standards/roles.md`](docs/standards/roles.md), архитектурные решения — в [`docs/ADR/`](docs/ADR/), требования MVP — в [`docs/CONCEPT.md`](docs/CONCEPT.md).
 

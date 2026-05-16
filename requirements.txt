@@ -1,5 +1,5 @@
 # =============================================================================
-# Mango TZ AI Analyzer — runtime dependencies
+# Clarify Engine AI — runtime dependencies
 # =============================================================================
 #
 # Cloud / Streamlit Cloud install order (CPU-only torch must be installed

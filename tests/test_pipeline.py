@@ -44,7 +44,7 @@ def _build_fake_llm() -> LLMClient:
 def _build_retriever():
     documents = [
         {
-            "text": "MANGO CRM поддерживает коннектор Битрикс24.",
+            "text": "Внутренняя CRM поддерживает коннектор Битрикс24.",
             "source": "crm.md",
             "metadata": {"section": "4.2"},
         },

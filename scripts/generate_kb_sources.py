@@ -43,9 +43,9 @@ FUNCTIONAL_ROWS = [
 ]
 
 API_GUIDE_PARAGRAPHS = [
-    ("MANGO API Documentation — Excerpt", "Heading1"),
+    ("Platform API Documentation — Excerpt", "Heading1"),
     (
-        "Документ описывает публичные методы API сервиса MANGO Office. "
+        "Документ описывает публичные методы API целевой платформы. "
         "Все методы используют HTTPS и аутентификацию по api_key + sign (HMAC-SHA256).",
         "BodyText",
     ),
@@ -74,7 +74,7 @@ CALL_RECORDING_PARAGRAPHS = [
     ("Запись разговоров — Руководство пользователя", "Heading1"),
     (
         "Запись разговоров доступна на всех тарифах уровня Профи и выше. "
-        "Записи хранятся в облаке MANGO Office до 3 лет с возможностью продления.",
+        "Записи хранятся в облаке целевой платформы до 3 лет с возможностью продления.",
         "BodyText",
     ),
     ("Как включить запись", "Heading2"),

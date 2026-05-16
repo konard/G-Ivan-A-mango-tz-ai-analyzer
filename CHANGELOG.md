@@ -1,12 +1,13 @@
 # Changelog
 
-Все значимые изменения проекта `mango-tz-ai-analyzer` фиксируются здесь.
+Все значимые изменения проекта `clarify-engine-ai` фиксируются здесь.
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
 
 ### Added
+- `.env.example` — шаблон переменных окружения с плейсхолдерами `DEEPSEEK_API_KEY`, `GIGACHAT_API_KEY`, `YANDEXGPT_API_KEY` и флагами `USE_TEST_DATA_MODE`, `STRICT_EMBEDDER` (issue #59).
 - `scripts/evaluate/evaluate_quality.py` — CLI для замера качества классификации (Macro-F1 и per-class P/R/F1) против `test_data/gold_standard.json`, поддерживает Excel и JSON-предсказания, JSON-логирование и опциональный детальный отчёт (issue #47, NFR-01).
 - `tests/test_quality.py` — smoke-тесты метрик, парсеров входных файлов и CLI evaluate_quality.
 - `docs/audit/2026-05-12_repository-consistency_audit_v1.md` — аудит согласованности репозитория, полноты документации и тестируемости требований (issue #21).
@@ -19,6 +20,7 @@
 - `tests/test_excel_exporter.py`, `tests/test_app_retry.py`, `tests/test_evaluate_quality.py` — регресс-тесты на FR-06 (4-колоночный экспорт), retry-by-RunID и контракт F1-оценщика.
 
 ### Changed
+- Проект переименован: `mango-tz-ai-analyzer` → `clarify-engine-ai`. Удалены все упоминания `mango`, `Mango Office`, `MANGO`, `Манго` из кода, конфигов, тестов, промптов и документации; заменены на нейтральные термины (`internal_kb`, `product_docs`, «целевая платформа», `clarify_engine_kb`). Файл `knowledge_base/sources/mango_crm_integration.md` переименован в `crm_integration.md` (issue #59).
 - `docs/CONCEPT.md` обновлён до версии 2.0 (issue #37): развёрнутая редакция SSoT-документа с согласованной структурой документации, детализированными FR-01..FR-08 и критериями приёмки, полным набором НФТ NFR-01..NFR-09, расширенной матрицей рисков R-01..R-09, Exit Criteria для MVP / Пилота / Масштабирования, глоссарием и реестром связанных документов.
 - `requirements.txt` — раскомментированы `rank_bm25`, `chromadb`, `sentence-transformers`; добавлена инструкция установки `torch` (CPU) для облачных сред (issue #45 MUST 1).
 - `src/llm/client.py` — экспоненциальный backoff `[5с, 15с, 45с]` для retriable-ошибок (timeout / 5xx / rate-limit), последовательные вызовы (issue #45 MUST 3).

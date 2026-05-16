@@ -5,9 +5,9 @@
 - **Версия:** v1.0
 - **Аудитор:** konard (Code Agent)
 - **Статус:** Draft
-- **Связанная задача:** [Issue #53](https://github.com/G-Ivan-A/mango-tz-ai-analyzer/issues/53)
+- **Связанная задача:** [Issue #53](https://github.com/G-Ivan-A/clarify-engine-ai/issues/53)
 - **Связанная ветка:** `issue-57-b574dc3a97c8`
-- **Связанный PR:** [#58](https://github.com/G-Ivan-A/mango-tz-ai-analyzer/pull/58)
+- **Связанный PR:** [#58](https://github.com/G-Ivan-A/clarify-engine-ai/pull/58)
 - **Связанные документы:**
   - [`docs/CONCEPT.md`](../CONCEPT.md) v2.1
   - [`docs/ADR/001-rag-architecture.md`](../ADR/001-rag-architecture.md)
@@ -72,7 +72,7 @@
   | `email` | `[EMAIL]` | Email-адреса |
   | `phone_ru` | `[PHONE]` | Российские номера (+7) |
   | `ip_address` | `[IP]` | IPv4 |
-  | `internal_domain` | `[DOMAIN]` | Хосты `*.mango / *.internal / *.corp / *.local` |
+  | `internal_domain` | `[DOMAIN]` | Хосты `*.internal / *.corp / *.local` |
 - **API:** класс `Masker` (с кэшем компиляции), процедурные обёртки `mask_text()` / `mask_context_chunks()` (с module-level `_masking_cache` для backward compatibility).
 - **Логирование:** debug-логи фиксируют **только** имя правила и количество совпадений, никогда — содержимое (`tests/test_masking.py::TestMaskingLogging::test_debug_log_does_not_contain_original_value` это подтверждает).
 - **Отложено осознанно:** маскирование ФИО / ООО / ИП явно вынесено в комментарий `configs/masking_rules.yaml` и подкреплено `tests/test_masking.py::TestDeferredPatterns::test_legal_entity_token_is_not_emitted` / `test_ie_token_is_not_emitted` — это страховка от ложноположительной утечки токена «УРЕГУЛИРОВАНО».

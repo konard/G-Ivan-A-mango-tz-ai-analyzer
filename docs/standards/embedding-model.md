@@ -5,7 +5,7 @@
 ---
 
 ## 1. Назначение
-Документ фиксирует модель эмбеддингов, используемую в RAG-пайплайне `mango-tz-ai-analyzer` для MVP и Production, и условия её замены. Является стандартом-приложением к [ADR-001](../ADR/001-rag-architecture.md).
+Документ фиксирует модель эмбеддингов, используемую в RAG-пайплайне `clarify-engine-ai` для MVP и Production, и условия её замены. Является стандартом-приложением к [ADR-001](../ADR/001-rag-architecture.md).
 
 ## 2. Current Model (MVP & Production)
 - **Model:** `BAAI/bge-m3`

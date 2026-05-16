@@ -185,7 +185,7 @@ def main() -> int:
     config = load_config()
     model_name = str(config.get("model_name", "BAAI/bge-m3"))
     persist_dir = str(config.get("vector_store", {}).get("persist_directory", BASE_DIR / "chroma_data"))
-    collection_name = str(config.get("vector_store", {}).get("collection_name", "mango_kb"))
+    collection_name = str(config.get("vector_store", {}).get("collection_name", "clarify_engine_kb"))
 
     if not SOURCES_DIR.exists():
         logger.error("Sources directory not found: %s", SOURCES_DIR)
