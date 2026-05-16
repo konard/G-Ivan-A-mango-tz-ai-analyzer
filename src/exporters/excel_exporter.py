@@ -1,7 +1,7 @@
 """Excel exporter for classification results.
 
 Per issue #45 MUST 4 (FR-06): the output workbook preserves the original ТЗ
-columns and appends **exactly five** result columns, in this order::
+columns and appends **exactly four** result columns, in this order::
 
     [Статус], [Комментарий], [Confidence], [RunID]
 
