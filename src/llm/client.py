@@ -43,6 +43,13 @@ DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
 HTTP_TIMEOUT_SECONDS = 30
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+# Ordered fallback chain for free-text RAG generation (issue #73).
+# 1) GigaChat (OAuth2)  →  2) OpenRouter (free models)  →  3) Ollama (local)
+RAG_FALLBACK_CHAIN: tuple[str, ...] = ("gigachat", "openrouter", "ollama")
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1:free"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 # Fixed exponential backoff schedule (seconds), per issue #45 MUST 3.
 # index = attempt - 1; clipped to last value if more attempts are configured.
 BACKOFF_SCHEDULE_SECONDS: tuple[int, ...] = (5, 15, 45)
@@ -94,6 +101,7 @@ class ClassificationResult:
 
 
 ProviderCall = Callable[[str, str, Dict[str, Any]], str]
+RagProviderCall = Callable[[str, str, Dict[str, Any]], str]
 
 
 def _load_llm_config(path: str) -> Dict[str, Any]:
@@ -220,6 +228,58 @@ class LLMClient:
             if name in providers:
                 result.append((name, providers[name]))
         return result
+
+    def generate_rag_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> str:
+        """Generate a free-text RAG answer with the GigaChat→OpenRouter→Ollama chain.
+
+        Unlike :meth:`classify_requirement`, this method:
+
+        - Does **not** force ``response_format: json_object``; providers return
+          unconstrained text suitable for the KB Q&A UI.
+        - Does **not** run schema validation on the response.
+        - Uses a dedicated fallback chain (``RAG_FALLBACK_CHAIN``) so the
+          classification pipeline (DeepSeek→GigaChat) and the RAG pipeline can
+          evolve independently.
+
+        Errors from each provider (HTTP 4xx/5xx, SSL, timeouts, refused
+        connections) are logged at ``WARNING`` and trigger fallback to the next
+        provider. ``LLMError`` is raised only when every provider has failed.
+        """
+        if not user_prompt or not user_prompt.strip():
+            raise ValueError("user_prompt must not be empty")
+
+        providers = self.config.get("providers", {}) or {}
+        rag_callers: Dict[str, RagProviderCall] = {
+            "gigachat": _call_gigachat_rag,
+            "openrouter": _call_openrouter_rag,
+            "ollama": _call_ollama_rag,
+        }
+
+        last_error: Optional[Exception] = None
+        for name in RAG_FALLBACK_CHAIN:
+            caller = rag_callers.get(name)
+            if caller is None:
+                continue
+            provider_cfg = providers.get(name) or {}
+            try:
+                return caller(system_prompt, user_prompt, provider_cfg)
+            except Exception as exc:  # noqa: BLE001 - fall through to next provider
+                last_error = exc
+                logger.warning(
+                    "RAG provider %s failed (%s); trying next provider.",
+                    name,
+                    exc,
+                )
+                continue
+
+        raise LLMError(
+            "All RAG providers failed (GigaChat → OpenRouter → Ollama). "
+            f"Last error: {last_error}"
+        )
 
     def classify_requirement(
         self,
@@ -399,3 +459,237 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
         },
     )
     return data["choices"][0]["message"]["content"]
+
+
+# ----------------------------------------------------- RAG provider callers --
+def _gigachat_access_token(config: Dict[str, Any]) -> str:
+    """Fetch a fresh OAuth2 access token from GigaChat.
+
+    Reads credentials from either:
+    - ``config['credentials_env']`` (a single env var containing the prebuilt
+      ``Basic`` payload, kept for backwards compatibility with the existing
+      classification provider), or
+    - ``GIGACHAT_CLIENT_ID`` + ``GIGACHAT_CLIENT_SECRET`` (per issue #73 —
+      preferred so secrets are not pre-encoded in the environment).
+    """
+    try:
+        import base64
+        import requests  # type: ignore
+    except ImportError as exc:  # pragma: no cover - guaranteed by requirements.txt
+        raise RuntimeError("`requests` library is required for GigaChat") from exc
+
+    credentials = _resolve_env(config.get("credentials_env"))
+    if not credentials:
+        client_id = _resolve_env("GIGACHAT_CLIENT_ID", config.get("client_id_env"))
+        client_secret = _resolve_env(
+            "GIGACHAT_CLIENT_SECRET", config.get("client_secret_env")
+        )
+        if not client_id or not client_secret:
+            raise RuntimeError(
+                "GigaChat OAuth2 credentials are not configured "
+                "(set GIGACHAT_CLIENT_ID and GIGACHAT_CLIENT_SECRET, or "
+                "GIGACHAT_AUTH in your .env)."
+            )
+        credentials = base64.b64encode(
+            f"{client_id}:{client_secret}".encode("utf-8")
+        ).decode("ascii")
+
+    scope = str(config.get("scope", "GIGACHAT_API_PERS"))
+    rq_uid = str(config.get("rq_uid", "00000000-0000-0000-0000-000000000000"))
+    verify_ssl = bool(config.get("verify_ssl", True))
+
+    try:
+        token_resp = requests.post(
+            "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+            headers={
+                "Authorization": f"Basic {credentials}",
+                "RqUID": rq_uid,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={"scope": scope},
+            timeout=HTTP_TIMEOUT_SECONDS,
+            verify=verify_ssl,
+        )
+    except requests.exceptions.SSLError as exc:
+        raise RuntimeError(f"GigaChat SSL error: {exc}") from exc
+    except requests.exceptions.ConnectionError as exc:
+        raise RuntimeError(f"GigaChat auth connection error: {exc}") from exc
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError(f"GigaChat auth timeout: {exc}") from exc
+
+    if token_resp.status_code >= 400:
+        raise RuntimeError(
+            f"GigaChat auth returned HTTP {token_resp.status_code}: "
+            f"{token_resp.text[:300]}"
+        )
+    try:
+        return str(token_resp.json()["access_token"])
+    except (ValueError, KeyError) as exc:
+        raise RuntimeError(f"GigaChat auth response missing access_token: {exc}") from exc
+
+
+def _call_gigachat_rag(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
+    """GigaChat (priority 1 in the RAG fallback chain).
+
+    Authenticates with OAuth2 (``client_id`` + ``client_secret``) and calls the
+    Sberbank chat-completions endpoint. SSL verification can be disabled
+    per-provider via ``verify_ssl: false`` in ``configs/llm_config.yaml`` for
+    corporate proxies — there is no global override.
+    """
+    try:
+        import requests  # type: ignore
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("`requests` library is required for GigaChat") from exc
+
+    access_token = _gigachat_access_token(config)
+    verify_ssl = bool(config.get("verify_ssl", True))
+    try:
+        response = requests.post(
+            "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": config.get("model", "GigaChat-Pro"),
+                "temperature": float(config.get("temperature", 0.1)),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+            verify=verify_ssl,
+        )
+    except requests.exceptions.SSLError as exc:
+        raise RuntimeError(f"GigaChat SSL error: {exc}") from exc
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"GigaChat request failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"GigaChat returned HTTP {response.status_code}: {response.text[:300]}"
+        )
+    try:
+        data = response.json()
+        return str(data["choices"][0]["message"]["content"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Unexpected GigaChat response shape: {exc}") from exc
+
+
+def _call_openrouter_rag(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
+    """OpenRouter (priority 2 in the RAG fallback chain).
+
+    Uses the OpenAI-compatible ``/api/v1/chat/completions`` endpoint. The API
+    key is read from ``OPENROUTER_API_KEY`` by default; the default model is a
+    free tier (``deepseek/deepseek-r1:free``) so the chain works without a
+    paid subscription.
+    """
+    try:
+        import requests  # type: ignore
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("`requests` library is required for OpenRouter") from exc
+
+    api_key = _resolve_env("OPENROUTER_API_KEY", config.get("api_key_env"))
+    if not api_key:
+        raise RuntimeError(
+            "OpenRouter API key is not configured (set OPENROUTER_API_KEY in your .env)."
+        )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    # Optional headers recommended by OpenRouter for analytics; no PII leaks.
+    referer = config.get("http_referer") or os.environ.get("OPENROUTER_HTTP_REFERER")
+    if referer:
+        headers["HTTP-Referer"] = str(referer)
+    title = config.get("x_title") or os.environ.get("OPENROUTER_X_TITLE")
+    if title:
+        headers["X-Title"] = str(title)
+
+    base_url = str(config.get("base_url", "https://openrouter.ai/api/v1")).rstrip("/")
+    try:
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json={
+                "model": config.get("model", DEFAULT_OPENROUTER_MODEL),
+                "temperature": float(config.get("temperature", 0.1)),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.SSLError as exc:
+        raise RuntimeError(f"OpenRouter SSL error: {exc}") from exc
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"OpenRouter returned HTTP {response.status_code}: {response.text[:300]}"
+        )
+    try:
+        data = response.json()
+        return str(data["choices"][0]["message"]["content"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Unexpected OpenRouter response shape: {exc}") from exc
+
+
+def _call_ollama_rag(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
+    """Ollama (priority 3 — local fallback).
+
+    Targets the OpenAI-compatible endpoint exposed by Ollama
+    (``/v1/chat/completions``). The base URL and model are configurable via
+    ``OLLAMA_BASE_URL`` and ``OLLAMA_MODEL`` (or the per-provider config keys).
+    No API key is required.
+    """
+    try:
+        import requests  # type: ignore
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("`requests` library is required for Ollama") from exc
+
+    base_url = str(
+        config.get("base_url")
+        or os.environ.get("OLLAMA_BASE_URL")
+        or DEFAULT_OLLAMA_BASE_URL
+    ).rstrip("/")
+    model = str(
+        config.get("model") or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
+    )
+    try:
+        response = requests.post(
+            f"{base_url}/v1/chat/completions",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model": model,
+                "temperature": float(config.get("temperature", 0.1)),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.ConnectionError as exc:
+        logger.warning(
+            "Ollama is unreachable at %s — start it with `ollama serve` "
+            "and pull the model (`ollama pull %s`).",
+            base_url,
+            model,
+        )
+        raise RuntimeError(f"Ollama connection refused at {base_url}: {exc}") from exc
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Ollama request failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Ollama returned HTTP {response.status_code}: {response.text[:300]}"
+        )
+    try:
+        data = response.json()
+        return str(data["choices"][0]["message"]["content"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Unexpected Ollama response shape: {exc}") from exc

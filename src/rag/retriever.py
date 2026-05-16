@@ -38,6 +38,86 @@ DEFAULT_EMBEDDING_CONFIG_PATH = "configs/embedding_config.yaml"
 DEFAULT_TOP_K = 3
 DEFAULT_RRF_K = 60
 
+# Fallback used when ``vector_store.persist_directory`` is missing or unreadable
+# in ``configs/embedding_config.yaml``. The indexer
+# (``knowledge_base/indexing/build_index.py``) also writes here by default, so
+# retriever and indexer stay in sync without extra configuration.
+DEFAULT_VECTOR_STORE_DIR = "./chroma_data"
+DEFAULT_COLLECTION_NAME = "clarify_engine_kb"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
+
+
+def load_embedding_config(
+    config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
+) -> Dict[str, Any]:
+    """Read ``configs/embedding_config.yaml`` and return its parsed content.
+
+    Returns an empty dict on any failure so callers can rely on documented
+    defaults via :func:`resolve_vector_store_path` and friends.
+    """
+    path = Path(config_path)
+    if not path.exists():
+        logger.warning("Embedding config %s not found; using defaults.", path)
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        logger.warning("Failed to parse %s: %s", path, exc)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def resolve_vector_store_path(
+    config: Optional[Dict[str, Any]] = None,
+    *,
+    project_root: Optional[Path] = None,
+) -> Path:
+    """Resolve the ChromaDB persistence directory.
+
+    Order of precedence:
+
+    1. ``vector_store.persist_directory`` from ``configs/embedding_config.yaml``
+       (relative paths are anchored at ``project_root`` when supplied).
+    2. ``./chroma_data`` under ``project_root`` (or the current working
+       directory if ``project_root`` is ``None``).
+
+    The function never raises: an unreadable or missing config silently falls
+    back to ``DEFAULT_VECTOR_STORE_DIR`` so the retriever and the UI behave
+    identically when the configuration is partial.
+    """
+    cfg = config or {}
+    vs_cfg = cfg.get("vector_store") if isinstance(cfg, dict) else None
+    raw_path: Optional[str] = None
+    if isinstance(vs_cfg, dict):
+        value = vs_cfg.get("persist_directory")
+        if isinstance(value, str) and value.strip():
+            raw_path = value.strip()
+
+    candidate = Path(raw_path) if raw_path else Path(DEFAULT_VECTOR_STORE_DIR)
+    if not candidate.is_absolute() and project_root is not None:
+        candidate = (project_root / candidate).resolve()
+    return candidate
+
+
+def resolve_collection_name(config: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve the ChromaDB collection name with a documented fallback."""
+    cfg = config or {}
+    vs_cfg = cfg.get("vector_store") if isinstance(cfg, dict) else None
+    if isinstance(vs_cfg, dict):
+        value = vs_cfg.get("collection_name")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return DEFAULT_COLLECTION_NAME
+
+
+def resolve_embedding_model_name(config: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve the sentence-transformers model name (default: ``BAAI/bge-m3``)."""
+    cfg = config or {}
+    value = cfg.get("model_name") if isinstance(cfg, dict) else None
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return DEFAULT_EMBEDDING_MODEL
+
 
 @dataclass
 class RetrievedChunk:
@@ -429,3 +509,142 @@ def build_retriever(
     if documents:
         retriever.add_documents(documents)
     return retriever
+
+
+# ---------------------------------------------------------- ChromaDB retriever --
+class ChromaRetriever:
+    """Thin wrapper over a persistent ChromaDB collection.
+
+    The retriever encodes queries with the same ``sentence-transformers`` model
+    that produced the stored embeddings (default: ``BAAI/bge-m3``, 1024 dim).
+    Query embeddings are passed to ChromaDB via ``query_embeddings`` rather
+    than ``query_texts`` to bypass ChromaDB's built-in 384-dim default model,
+    which would otherwise raise ``InvalidArgumentError`` on a 1024-dim
+    collection (issue #73).
+    """
+
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        project_root: Optional[Path] = None,
+        embedder: Optional[Callable[[str], Sequence[float]]] = None,
+        client_factory: Optional[Callable[[str], Any]] = None,
+    ) -> None:
+        self.config = config or {}
+        self.persist_directory: Path = resolve_vector_store_path(
+            self.config, project_root=project_root
+        )
+        self.collection_name: str = resolve_collection_name(self.config)
+        self.model_name: str = resolve_embedding_model_name(self.config)
+        self._normalize = bool(self.config.get("normalize_embeddings", True))
+        self._embedder = embedder
+        self._client_factory = client_factory
+        self._client: Any = None
+        self._collection: Any = None
+
+    @classmethod
+    def from_config(
+        cls,
+        config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
+        *,
+        project_root: Optional[Path] = None,
+        embedder: Optional[Callable[[str], Sequence[float]]] = None,
+        client_factory: Optional[Callable[[str], Any]] = None,
+    ) -> "ChromaRetriever":
+        return cls(
+            config=load_embedding_config(config_path),
+            project_root=project_root,
+            embedder=embedder,
+            client_factory=client_factory,
+        )
+
+    # ----------------------------------------------------------- internals --
+    def _load_embedder(self) -> Callable[[str], Sequence[float]]:
+        if self._embedder is not None:
+            return self._embedder
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(_STRICT_EMBEDDER_ERROR) from exc
+        try:
+            model = SentenceTransformer(self.model_name)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(_STRICT_EMBEDDER_ERROR) from exc
+
+        normalize = self._normalize
+
+        def _embed(text: str) -> List[float]:
+            vector = model.encode(
+                text,
+                normalize_embeddings=normalize,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+            return [float(x) for x in vector.tolist()]
+
+        self._embedder = _embed
+        return _embed
+
+    def _ensure_collection(self) -> Any:
+        if self._collection is not None:
+            return self._collection
+        if self._client_factory is not None:
+            self._client = self._client_factory(str(self.persist_directory))
+        else:
+            try:
+                import chromadb  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError(
+                    "chromadb is not installed. Run `pip install -r requirements.txt`."
+                ) from exc
+            self._client = chromadb.PersistentClient(path=str(self.persist_directory))
+        self._collection = self._client.get_or_create_collection(name=self.collection_name)
+        return self._collection
+
+    # -------------------------------------------------------------- search --
+    def embed_query(self, query: str) -> List[float]:
+        """Encode ``query`` with the configured sentence-transformers model."""
+        embedder = self._load_embedder()
+        vector = embedder(query)
+        return [float(v) for v in vector]
+
+    def search(self, query: str, top_k: int = DEFAULT_TOP_K) -> List[Dict[str, Any]]:
+        """Run a vector search against the configured ChromaDB collection.
+
+        Returns chunk dicts shaped as::
+
+            {"text", "source", "chunk_idx", "distance", "similarity", "metadata"}
+
+        Higher ``similarity`` is better — ChromaDB's L2 distance is mapped to
+        a monotonic similarity score (``1 / (1 + distance)``).
+        """
+        if not query or not query.strip():
+            return []
+        collection = self._ensure_collection()
+        embedding = self.embed_query(query)
+        raw = collection.query(
+            query_embeddings=[embedding],
+            n_results=max(1, int(top_k)),
+            include=["documents", "metadatas", "distances"],
+        )
+        documents = (raw.get("documents") or [[]])[0]
+        metadatas = (raw.get("metadatas") or [[]])[0]
+        distances = (raw.get("distances") or [[]])[0]
+
+        chunks: List[Dict[str, Any]] = []
+        for doc, meta, dist in zip(documents, metadatas, distances):
+            meta = dict(meta or {})
+            distance = float(dist) if dist is not None else None
+            similarity = 1.0 / (1.0 + distance) if distance is not None else None
+            chunks.append(
+                {
+                    "text": doc or "",
+                    "source": str(meta.get("source", "unknown")),
+                    "chunk_idx": meta.get("chunk_idx"),
+                    "distance": distance,
+                    "similarity": similarity,
+                    "metadata": meta,
+                }
+            )
+        return chunks
