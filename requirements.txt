@@ -35,3 +35,7 @@ pydantic>=2.7
 
 # Logging / CLI niceties
 tqdm>=4.66
+
+# Document parsing (Knowledge Base)
+pypdf>=5.0.0
+python-docx>=1.0.0
