@@ -32,6 +32,8 @@ sentence-transformers>=2.7.0
 # LLM HTTP transport
 requests>=2.31
 pydantic>=2.7
+fastapi>=0.110
+uvicorn>=0.29
 
 # Logging / CLI niceties
 tqdm>=4.66

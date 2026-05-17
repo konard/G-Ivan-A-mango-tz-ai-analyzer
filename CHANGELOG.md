@@ -10,6 +10,14 @@
 - **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
 
 ### Added
+- **MINOR: clickable citation links with page anchors (BL-09.1, issue #104).**
+  `configs/ui_config.yaml` задаёт `citations.base_url` и `source_dir`,
+  `src/ui/app.py` строит Markdown-ссылки вида
+  `http://localhost:8000/docs/file.pdf#page=N`, а
+  `src/api/static_serve.py` добавляет безопасный FastAPI endpoint
+  `GET /docs/{filename}` с валидацией basename/path traversal и
+  `application/pdf`. ADR — [`docs/ADR/006-citation-links.md`](docs/ADR/006-citation-links.md);
+  тесты — `tests/test_citation_links.py`, `tests/test_static_serve.py`.
 - **MINOR: metadata inheritance & coverage improvement (BL-02 hardening, issue #109).**
   `knowledge_base/indexing/build_index.py` добавляет per-document
   `SectionPropagationState`: чанки без локального заголовка наследуют
