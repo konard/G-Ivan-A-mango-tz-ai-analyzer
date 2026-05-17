@@ -1,5 +1,25 @@
+# LLM provider configuration for the Clarify Engine RAG pipeline.
+# Synchronised with docs/standards/embedding-model.md v1.1 and
+# docs/audit/data-masking_v1.md v1.2 (BL-04, BL-22, BL-23 — issue #87).
+
 active_provider: "deepseek"
 use_test_data_mode: true
+
+# --- Temperature lock + decoding parameters (BL-22, FR-08, NFR-06) ------------
+# These values are enforced by LLMClient on every provider call. Provider-level
+# overrides are honoured only when explicitly present; prompts are NOT allowed
+# to override them at runtime. The four keys (temperature, top_p, seed,
+# max_tokens) are logged on every classification for audit (FR-08).
+decoding:
+  temperature: 0.1
+  top_p: 0.9
+  seed: 42
+  max_tokens: 1024
+
+# --- Masking of the RAG channel (BL-04) ---------------------------------------
+# Mirror of `mask_rag_context` from embedding_config.yaml — kept here so the
+# LLMClient can read the flag without parsing the embedding config.
+mask_rag_context: true
 
 providers:
   deepseek:
@@ -7,14 +27,12 @@ providers:
     model: "deepseek-chat"
     api_key_env: "DEEPSEEK_API_KEY"
     allowed_for_production: false
-    temperature: 0.1
     retry_attempts: 3
   gigachat:
     priority: 2
     model: "GigaChat-Pro"
     credentials_env: "GIGACHAT_AUTH"
     allowed_for_production: true
-    temperature: 0.1
     retry_attempts: 3
 
 fallback_providers:

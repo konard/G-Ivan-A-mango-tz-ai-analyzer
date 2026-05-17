@@ -1,0 +1,55 @@
+# BL-05.1 RAG-eval CI smoke (issue #87).
+#
+# Runs scripts/evaluate/evaluate_rag.py against the `smoke` subset of the
+# Golden Set using the deterministic stub retriever. The smoke job is
+# expected to finish in well under two minutes — no ML dependencies, no
+# Chroma index — so it can run on every push and pull request without
+# blocking developer flow.
+#
+# Production runs over the full Golden Set with the real HybridChromaRetriever
+# happen out-of-CI (manual `python scripts/evaluate/evaluate_rag.py`) until
+# BL-05.2 (LLM answer-quality channel) lands in Sprint 2.
+
+name: rag-eval-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    name: RAG eval smoke (stub retriever)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyYAML (only dep needed by evaluate_rag.py stub mode)
+        run: pip install pyyaml
+
+      - name: Run RAG eval (stub retriever, smoke subset)
+        run: |
+          python scripts/evaluate/evaluate_rag.py \
+            --golden test_data/rag_golden_set.json \
+            --output reports/rag_eval_smoke.json \
+            --k 3 \
+            --retriever stub \
+            --subset smoke \
+            --min-hit-rate 1.0 \
+            --min-mrr 1.0 \
+            --min-context-recall 0.5
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-smoke-report
+          path: reports/rag_eval_smoke.json

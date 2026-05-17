@@ -1,7 +1,7 @@
 # ADR-001: RAG Architecture with Hybrid Search
 
 ## Status
-Accepted (2026-05-12)
+Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.2)
 
 ## Context
 - Требуется классификация требований ТЗ с обязательным цитированием (см. [`docs/CONCEPT.md`](../CONCEPT.md), разделы 1 и 4).
@@ -36,11 +36,20 @@ Accepted (2026-05-12)
 - Модель эмбеддингов может быть заменена через конфиг без изменения кода (см. критерии замены в [`docs/standards/embedding-model.md`](../standards/embedding-model.md)).
 - Vector store также абстрагирован конфигом — допустима последующая замена ChromaDB на резидентную альтернативу при изменении требований ИБ.
 
+### Sprint 1 Addenda (BL-16a, issue #87)
+- **Metadata Enrichment (BL-02).** Каждый чанк в ChromaDB обязан содержать `page_number`, `section_title`, `section_number`, `product` в дополнение к `source` / `chunk_idx`. Контракт зафиксирован в [`docs/standards/embedding-model.md`](../standards/embedding-model.md) §5.2; schema-check выполняется при индексации и в `evaluate_rag.py` (BL-05). NFR-02 (цитируемость) считается достигнутой при `≥ 95 %` непустых `page_number` + `section_title`.
+- **STRICT_MODE (BL-03).** Флаги `strict_rag_mode` / `strict_min_score` в `configs/embedding_config.yaml` блокируют LLM-вызов при пустом или слабом контексте. Снижает риск R-01 (галлюцинации); подбор порога — на Golden Set.
+- **Masked RAG channel (BL-04).** Флаг `mask_rag_context` в `configs/embedding_config.yaml` включает применение `mask_context_chunks` ко всем чанкам перед формированием промпта. NFR-04 / NFR-05.
+- **Temperature lock (BL-22).** Блок `decoding:` в [`configs/llm_config.yaml`](../../configs/llm_config.yaml) (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`) подключается `LLMClient`'ом ко всем провайдерам fallback-цепочки. Цель — детерминизм regression-прогонов Golden Set (BL-05) и стабильность F1.
+- **Log sanitization (BL-23).** `src/llm/masking.py::sanitize_log_record` подключается как `logging.Filter` в `src/pipeline.py` и применяется к отчётам `evaluate_rag.py`. Контракт повторяет ADR-003 §4.3 (`sanitize_for_log()`). NFR-05.
+
 ## Triggers for Revision
 - Падение фактической точности ниже 70% по итогам пилота (Exit Criteria MVP, раздел 7 концепции).
 - Изменение состава доступных LLM-провайдеров (например, недоступность DeepSeek или GigaChat).
 - Смена требований резидентности данных (например, запрет на использование зарубежных API даже в тестовом режиме).
 - Появление верифицированной российской модели эмбеддингов с качеством ≥ `bge-m3`.
+- Включение `MULTIHOP_ENABLED=true` (BL-11) либо расширение fallback-цепочки за пределы DeepSeek → GigaChat.
+- Сдвиг `chunk_size` / `chunk_overlap` с MVP-окна `250 / 50` на `512 / 64` (BL-16b) — требует ревизии § Consequences и BREAKING-записи в `CHANGELOG.md`.
 
 ## References
 - [`docs/CONCEPT.md`](../CONCEPT.md) — концепция MVP, разделы 3 (Описание решения) и 5 (Архитектура и стек).
@@ -52,3 +61,4 @@ Accepted (2026-05-12)
 |--------|------|-----------|
 | 1.0 | 2026-05-12 | Первая версия ADR: фиксация RAG с гибридным поиском (BM25 + Dense + RRF), ChromaDB и `BAAI/bge-m3`. |
 | 1.1 | 2026-05-16 | Упрощение LLM fallback-цепочки до двух провайдеров (DeepSeek → GigaChat); исключены Qwen (DashScope) и YandexGPT (issue #64). |
+| 1.2 | 2026-05-17 | BL-16a (issue #87): добавлен раздел «Sprint 1 Addenda» (Metadata Enrichment BL-02, STRICT_MODE BL-03, Masked RAG channel BL-04, Temperature lock BL-22, Log sanitization BL-23). Triggers for Revision дополнены пунктом про переход на `chunk_size=512` (BL-16b) и расширение fallback-цепочки. |

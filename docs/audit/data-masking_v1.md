@@ -1,6 +1,6 @@
 # 🔒 Audit: Data Masking Implementation
 
-**Версия:** v1 | **Дата:** 2026-05-12 | **Статус:** Draft
+**Версия:** v1.2 | **Дата:** 2026-05-17 | **Статус:** Approved (Sprint 1 P0)
 
 ---
 
@@ -39,8 +39,9 @@
 - [x] Модуль `src/llm/masking.py` реализован.
 - [x] Юнит-тесты написаны (`tests/test_masking.py`).
 - [x] Интеграция в LLM-пайплайн (между подготовкой промпта и вызовом провайдера) завершена.
-- [x] RAG context маскируется перед отправкой в LLM (риск 9.1 закрыт).
-- [ ] Аудит логов на утечки добавлен в чек-лист релиза.
+- [x] RAG context маскируется перед отправкой в LLM (риск 9.1 закрыт; флаг `mask_rag_context: true` в `configs/embedding_config.yaml`, BL-04).
+- [x] Log sanitization подключён: `sanitize_log_record()` в `src/llm/masking.py` + `logging.Filter` в `src/pipeline.py` (BL-23, ADR-003 §4.3).
+- [x] Аудит логов на утечки добавлен в чек-лист релиза (см. §8 Log sanitization).
 
 ## 6. Test Coverage
 Все тест-кейсы реализованы в `tests/test_masking.py`:
@@ -67,3 +68,41 @@
 |--------|------|-----------|
 | v1 | 2026-05-12 | Первая версия аудита маскирования: regex-паттерны, тест-кейсы, метрики, статус реализации. |
 | v1.1 | 2026-05-12 | Закрытие риска 9.1: RAG context теперь маскируется перед отправкой в LLM. Добавлены тесты `test_classify_requirement_masks_requirement_and_context` и `test_classify_requirement_fails_without_context_masking` в `tests/test_llm_client.py`. Обновлён раздел Test Coverage. |
+| v1.2 | 2026-05-17 | BL-23 (issue #87): добавлен §8 «Log sanitization (FR-08 + RAG-eval)» с привязкой к ADR-003 §4.3 (`sanitize_for_log()`). BL-04: явная ссылка на флаг `mask_rag_context: true` в `configs/embedding_config.yaml` и `generate_rag_response`. Обновлён §5 Implementation Status. |
+
+## 8. Log sanitization (FR-08 + RAG-eval)
+
+Раздел добавлен в версии v1.2 (BL-23, issue #87) и фиксирует контракт
+санитайзера для JSON-логов FR-08 и отчётов `evaluate_rag.py`.
+
+### 8.1 Scope
+- JSON-логи пайплайна (`src/pipeline.py`) — все записи, проходящие через `_JsonFormatter`.
+- Отчёты `evaluate_rag.py` (`reports/rag-*.json`), включая CI-артефакты smoke-job `rag-eval-smoke` (BL-05.1).
+- Любые `extra={...}` поля, передаваемые с `requirement_id` / `run_id`.
+
+### 8.2 Контракт `sanitize_log_record(record: dict) -> dict`
+- Алиас к `sanitize_for_log()` из [ADR-003 §4.3 Log sanitization](../ADR/003-multi-agent-orchestration-draft.md#43-log-sanitization-manage).
+- Применяет regex-маскирование из `configs/masking_rules.yaml` к полям:
+  `message`, `payload`, `context`, `answer`, `question`, `requirement_text`,
+  `chunks[*].text` (рекурсивно по списку чанков).
+- Заменяет значения переменных окружения, помеченных как секреты
+  (`*_API_KEY`, `*_TOKEN`, `*_SECRET`), на `***REDACTED***`.
+- Усекает поле `payload` (если оно ≥ `N` КБ, по умолчанию 32 КБ) — защита
+  от взрыва build-artifacts CI.
+- НЕ модифицирует `run_id`, `requirement_id`, `level`, `timestamp`,
+  `logger`, `provider`, `classification` (они нужны для трассировки).
+
+### 8.3 Интеграция в код
+- Реализация — `src/llm/masking.py::sanitize_log_record`.
+- Подключение как `logging.Filter` — `src/pipeline.py::configure_json_logging`
+  (фильтр применяется ко всем хендлерам root-логгера).
+- Регрессионный тест —
+  `tests/test_masking.py::TestLogSanitization::test_log_sanitization_applies_to_evaluate_rag_report`.
+
+### 8.4 Метрики и триггеры инцидента
+- **Цель:** 0 совпадений regex чувствительных данных в `reports/rag-*.json`
+  и в CI-логах.
+- **Триггер инцидента:** в CI-артефакте обнаружена хотя бы одна
+  не замаскированная сущность из §2.
+- **Чек-лист релиза:** перед публикацией tag'а — прогон `evaluate_rag.py`
+  на Golden Set + grep по `reports/` regex'ами из §2 (должно быть 0 совпадений).

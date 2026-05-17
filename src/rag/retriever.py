@@ -648,3 +648,198 @@ class ChromaRetriever:
                 }
             )
         return chunks
+
+
+# --------------------------------------------------------- Hybrid Chroma retriever
+class HybridChromaRetriever:
+    """Hybrid BM25 + dense retriever backed by a persistent ChromaDB collection.
+
+    Bridges :class:`HybridRetriever` (BM25 + RRF) with :class:`ChromaRetriever`
+    (production-grade dense vector store) so the Streamlit UI runs the full
+    BL-01 path — BM25 lexical recall + bge-m3 dense recall + RRF fusion (k=60).
+
+    On the first search, the entire ChromaDB corpus is loaded into memory and a
+    BM25 index is built. Dense ranking re-uses the persisted embeddings via
+    ``ChromaRetriever.search`` (no re-encoding of indexed documents). Result
+    shape matches :class:`ChromaRetriever.search` so existing UI code keeps
+    working: ``{text, source, chunk_idx, distance, similarity, metadata,
+    score}`` where ``score`` is the fused RRF score.
+    """
+
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        project_root: Optional[Path] = None,
+        embedder: Optional[Callable[[str], Sequence[float]]] = None,
+        client_factory: Optional[Callable[[str], Any]] = None,
+    ) -> None:
+        self.config = config or {}
+        self._dense = ChromaRetriever(
+            config=self.config,
+            project_root=project_root,
+            embedder=embedder,
+            client_factory=client_factory,
+        )
+        self._bm25: Optional[_BM25] = None
+        self._corpus_meta: List[Dict[str, Any]] = []
+        self._corpus_loaded = False
+
+    @classmethod
+    def from_config(
+        cls,
+        config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
+        *,
+        project_root: Optional[Path] = None,
+        embedder: Optional[Callable[[str], Sequence[float]]] = None,
+        client_factory: Optional[Callable[[str], Any]] = None,
+    ) -> "HybridChromaRetriever":
+        return cls(
+            config=load_embedding_config(config_path),
+            project_root=project_root,
+            embedder=embedder,
+            client_factory=client_factory,
+        )
+
+    # Public attributes proxied so the UI sidebar keeps working unchanged.
+    @property
+    def persist_directory(self) -> Path:
+        return self._dense.persist_directory
+
+    @property
+    def collection_name(self) -> str:
+        return self._dense.collection_name
+
+    @property
+    def model_name(self) -> str:
+        return self._dense.model_name
+
+    @property
+    def top_k(self) -> int:
+        return int(self.config.get("top_k", DEFAULT_TOP_K) or DEFAULT_TOP_K)
+
+    @property
+    def rrf_k(self) -> int:
+        return int(self.config.get("rrf_k", DEFAULT_RRF_K) or DEFAULT_RRF_K)
+
+    # ---------------------------------------------------------- BM25 corpus --
+    def _load_corpus(self) -> None:
+        """Pull all documents from the Chroma collection and build BM25 once."""
+        if self._corpus_loaded:
+            return
+        collection = self._dense._ensure_collection()
+        try:
+            raw = collection.get(include=["documents", "metadatas"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("HybridChromaRetriever: collection.get failed: %s", exc)
+            self._corpus_loaded = True
+            return
+
+        ids = raw.get("ids") or []
+        documents = raw.get("documents") or []
+        metadatas = raw.get("metadatas") or []
+        tokenized: List[List[str]] = []
+        for chunk_id, doc, meta in zip(ids, documents, metadatas):
+            meta = dict(meta or {})
+            text = doc or ""
+            tokenized.append(_tokenize(text))
+            self._corpus_meta.append(
+                {
+                    "id": str(chunk_id),
+                    "text": text,
+                    "source": str(meta.get("source", "unknown")),
+                    "chunk_idx": meta.get("chunk_idx"),
+                    "metadata": meta,
+                }
+            )
+        self._bm25 = _BM25(tokenized) if tokenized else None
+        self._corpus_loaded = True
+        logger.info(
+            "HybridChromaRetriever: BM25 built over %d chunks (collection=%s)",
+            len(tokenized),
+            self.collection_name,
+        )
+
+    def _bm25_results(self, query: str, top_k: int) -> List[Dict[str, Any]]:
+        if self._bm25 is None or not self._corpus_meta:
+            return []
+        scores = self._bm25.get_scores(_tokenize(query))
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        ranked: List[Dict[str, Any]] = []
+        for idx in order:
+            if scores[idx] <= 0.0:
+                continue
+            meta = self._corpus_meta[idx]
+            ranked.append(
+                {
+                    "id": meta["id"],
+                    "text": meta["text"],
+                    "source": meta["source"],
+                    "chunk_idx": meta["chunk_idx"],
+                    "metadata": meta["metadata"],
+                    "score": float(scores[idx]),
+                    "page": _page_from_metadata(meta["metadata"]),
+                }
+            )
+            if len(ranked) >= top_k:
+                break
+        return ranked
+
+    # -------------------------------------------------------------- search --
+    def search(self, query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Run hybrid BM25 + dense retrieval with RRF fusion.
+
+        ``top_k`` controls the number of fused results. Each branch is sampled
+        with ``2 × top_k`` candidates so RRF has enough material to reorder.
+        """
+        if not query or not query.strip():
+            return []
+        effective_top_k = int(top_k) if top_k is not None else self.top_k
+        candidate_k = max(effective_top_k * 2, effective_top_k)
+
+        self._load_corpus()
+
+        dense_chunks = self._dense.search(query, top_k=candidate_k)
+        bm25_chunks = self._bm25_results(query, top_k=candidate_k)
+
+        for chunk in dense_chunks:
+            sim = chunk.get("similarity")
+            chunk["score"] = float(sim) if isinstance(sim, (int, float)) else 0.0
+            meta = chunk.get("metadata") or {}
+            chunk_idx = chunk.get("chunk_idx")
+            source = chunk.get("source", "unknown")
+            if "id" not in chunk:
+                chunk["id"] = f"{source}__{chunk_idx}" if chunk_idx is not None else source
+            chunk["page"] = chunk.get("page") or _page_from_metadata(meta)
+
+        fused = reciprocal_rank_fusion(
+            bm25_results=bm25_chunks,
+            dense_results=dense_chunks,
+            k=self.rrf_k,
+            top_k=effective_top_k,
+        )
+
+        dense_by_key = {(c.get("source"), c.get("chunk_idx")): c for c in dense_chunks}
+        results: List[Dict[str, Any]] = []
+        for item in fused:
+            meta = item.get("metadata") or {}
+            source = item.get("source", "unknown")
+            chunk_idx = meta.get("chunk_idx")
+            dense_match = dense_by_key.get((source, chunk_idx))
+            results.append(
+                {
+                    "text": item.get("text", ""),
+                    "source": source,
+                    "chunk_idx": chunk_idx,
+                    "distance": dense_match.get("distance") if dense_match else None,
+                    "similarity": dense_match.get("similarity") if dense_match else None,
+                    "score": item["score"],
+                    "metadata": meta,
+                    "page": item.get("page", ""),
+                }
+            )
+        return results
+
+    def embed_query(self, query: str) -> List[float]:
+        """Encode ``query`` via the underlying ChromaRetriever embedder."""
+        return self._dense.embed_query(query)

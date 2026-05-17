@@ -20,6 +20,7 @@ configured embedding model) are used.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -46,6 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LLM_CONFIG_PATH = PROJECT_ROOT / "configs" / "llm_config.yaml"
 EMBEDDING_CONFIG_PATH = PROJECT_ROOT / "configs" / "embedding_config.yaml"
 ENV_PATH = PROJECT_ROOT / ".env"
+SOURCES_DIR = PROJECT_ROOT / "knowledge_base" / "sources"
 
 DEFAULT_TOP_K = 5
 CHUNK_PREVIEW_CHARS = 600
@@ -93,13 +95,17 @@ def truncate(text: str, limit: int = CHUNK_PREVIEW_CHARS) -> str:
 
 
 # ----------------------------------------------------- cached resource loaders --
-@st.cache_resource(show_spinner="Loading retriever (embedding model + ChromaDB)…")
+@st.cache_resource(show_spinner="Loading retriever (BM25 + bge-m3 + ChromaDB)…")
 def get_retriever():
-    """Build and cache a :class:`ChromaRetriever` from the embedding config."""
-    from src.rag.retriever import ChromaRetriever
+    """Build and cache the production hybrid retriever (BL-01).
+
+    Combines BM25 lexical recall + bge-m3 dense recall with RRF fusion
+    (k=60) over the persistent ChromaDB collection.
+    """
+    from src.rag.retriever import HybridChromaRetriever
 
     try:
-        return ChromaRetriever.from_config(
+        return HybridChromaRetriever.from_config(
             config_path=str(EMBEDDING_CONFIG_PATH),
             project_root=PROJECT_ROOT,
         )
@@ -130,6 +136,86 @@ def search_kb(query: str, top_k: int) -> List[Dict[str, Any]]:
             "the index is built: `python knowledge_base/indexing/build_index.py`."
         )
     return chunks
+
+
+# ------------------------------------------------------------- BL-09 citations --
+def build_citation_link(
+    source: str,
+    page: Any,
+    *,
+    sources_dir: Path = SOURCES_DIR,
+) -> str:
+    """Return a clickable Markdown citation pinned to a PDF page.
+
+    Format follows the BL-09 spec: ``[source.pdf, стр. N](file:///abs/path#page=N)``.
+    When the page number is missing or non-integer, the link still resolves to
+    the source file (no ``#page`` anchor).
+    """
+    if not source:
+        return ""
+    abs_path = (sources_dir / source).resolve()
+    page_int = _coerce_page(page)
+    if page_int:
+        label = f"{source}, стр. {page_int}"
+        target = f"file://{abs_path}#page={page_int}"
+    else:
+        label = source
+        target = f"file://{abs_path}"
+    return f"[{label}]({target})"
+
+
+def _coerce_page(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return None
+    return page if page > 0 else None
+
+
+def _first_page_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Pick the first page seen for each source filename (top-ranked first)."""
+    mapping: Dict[str, int] = {}
+    for chunk in chunks:
+        source = str(chunk.get("source") or "").strip()
+        if not source or source in mapping:
+            continue
+        meta = chunk.get("metadata") or {}
+        page = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
+        if page:
+            mapping[source] = page
+    return mapping
+
+
+def linkify_citations(
+    answer: str,
+    chunks: List[Dict[str, Any]],
+    *,
+    sources_dir: Path = SOURCES_DIR,
+) -> str:
+    """Rewrite ``[filename.pdf]`` placeholders in ``answer`` to BL-09 links.
+
+    The replacement uses the highest-ranked chunk's ``page_number`` for each
+    source. Citations whose source is not present in ``chunks`` are left
+    untouched so the UI never invents page numbers.
+    """
+    if not answer:
+        return answer
+    page_by_source = _first_page_per_source(chunks)
+    if not page_by_source:
+        return answer
+
+    pattern = re.compile(r"\[([^\[\]\(\)\n]+\.[A-Za-z0-9]{1,8})\](?!\()")
+
+    def _replace(match: re.Match) -> str:
+        source = match.group(1).strip()
+        if source not in page_by_source:
+            return match.group(0)
+        link = build_citation_link(source, page_by_source[source], sources_dir=sources_dir)
+        return link or match.group(0)
+
+    return pattern.sub(_replace, answer)
 
 
 # ----------------------------------------------------------- LLM provider calls --
@@ -166,14 +252,20 @@ def render_chunks(chunks: List[Dict[str, Any]], debug: bool) -> None:
         similarity = chunk.get("similarity")
         distance = chunk.get("distance")
         chunk_idx = chunk.get("chunk_idx")
+        meta = chunk.get("metadata") or {}
+        page_number = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
         score_label = (
             f"similarity={similarity:.4f}" if isinstance(similarity, float)
             else "similarity=n/a"
         )
         chunk_suffix = f" · chunk={chunk_idx}" if chunk_idx is not None else ""
+        page_suffix = f" · стр. {page_number}" if page_number else ""
         with st.expander(
-            f"#{i} — {source}{chunk_suffix}  ({score_label})", expanded=(i == 1)
+            f"#{i} — {source}{page_suffix}{chunk_suffix}  ({score_label})",
+            expanded=(i == 1),
         ):
+            if source and source != "unknown":
+                st.markdown(build_citation_link(source, page_number))
             st.markdown("**Snippet**")
             st.write(truncate(chunk.get("text", "")))
             st.caption(
@@ -291,7 +383,8 @@ def main() -> None:
         return
 
     st.subheader("LLM Response")
-    st.markdown(answer or "_(empty response)_")
+    rendered_answer = linkify_citations(answer or "", chunks)
+    st.markdown(rendered_answer or "_(empty response)_")
 
     if settings["debug"]:
         with st.expander("Prompt sent to LLM", expanded=False):

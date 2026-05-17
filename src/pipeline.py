@@ -30,6 +30,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from src.exporters.excel_exporter import save_results
 from src.llm.client import LLMClient, LLMError
+from src.llm.masking import sanitize_log_record
 from src.parsers.excel_parser import load_requirements
 from src.rag.retriever import HybridRetriever, build_retriever
 
@@ -37,7 +38,17 @@ logger = logging.getLogger(__name__)
 
 
 class _JsonFormatter(logging.Formatter):
-    """Minimal JSON log formatter that includes ``run_id`` and ``requirement_id``."""
+    """Minimal JSON log formatter that includes ``run_id`` and ``requirement_id``.
+
+    BL-23 (issue #87): every record is passed through
+    :func:`sanitize_log_record` before serialisation, so regex patterns from
+    ``configs/masking_rules.yaml`` are applied to free-text fields and any
+    secret-shaped env vars in ``extra`` are redacted.
+    """
+
+    def __init__(self, masking_config_path: str = "configs/masking_rules.yaml") -> None:
+        super().__init__()
+        self._masking_config_path = masking_config_path
 
     def format(self, record: logging.LogRecord) -> str:  # noqa: D401
         entry: Dict[str, Any] = {
@@ -54,7 +65,8 @@ class _JsonFormatter(logging.Formatter):
             entry["requirement_id"] = requirement_id
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(entry, ensure_ascii=False)
+        sanitized = sanitize_log_record(entry, config_path=self._masking_config_path)
+        return json.dumps(sanitized, ensure_ascii=False)
 
 
 class _RunIdFilter(logging.Filter):
@@ -75,13 +87,52 @@ class _RunIdFilter(logging.Filter):
         return True
 
 
-def configure_json_logging(run_id: str, level: int = logging.INFO) -> None:
-    """Install a JSON formatter on the root logger that carries the run_id."""
+class _SanitizingFilter(logging.Filter):
+    """BL-23 filter that masks ``record.msg`` in-place before formatting.
+
+    The :class:`_JsonFormatter` already sanitises the assembled JSON entry,
+    but a filter is also installed so that downstream handlers (e.g. a
+    ``StreamHandler`` writing to stderr in plain text) cannot leak raw PII
+    even when the JSON formatter is bypassed.
+    """
+
+    def __init__(self, masking_config_path: str = "configs/masking_rules.yaml") -> None:
+        super().__init__()
+        self._masking_config_path = masking_config_path
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            rendered = record.getMessage()
+        except Exception:  # noqa: BLE001 - never break logging on format errors
+            return True
+        sanitized = sanitize_log_record(
+            {"message": rendered}, config_path=self._masking_config_path
+        )["message"]
+        if sanitized != rendered:
+            record.msg = sanitized
+            record.args = ()
+        return True
+
+
+def configure_json_logging(
+    run_id: str,
+    level: int = logging.INFO,
+    masking_config_path: str = "configs/masking_rules.yaml",
+) -> None:
+    """Install a JSON formatter on the root logger that carries the run_id.
+
+    BL-23: a :class:`_SanitizingFilter` is attached to the root logger so
+    every record reaches the formatter already sanitised. The formatter
+    itself runs :func:`sanitize_log_record` over the JSON entry as a
+    belt-and-braces defence (multiple handlers, ``extra=`` fields, etc.).
+    """
     root = logging.getLogger()
     root.setLevel(level)
     root.handlers.clear()
+    root.filters.clear()
+    root.addFilter(_SanitizingFilter(masking_config_path=masking_config_path))
     handler = logging.StreamHandler()
-    handler.setFormatter(_JsonFormatter())
+    handler.setFormatter(_JsonFormatter(masking_config_path=masking_config_path))
     handler.addFilter(_RunIdFilter(run_id))
     root.addHandler(handler)
 

@@ -1,0 +1,211 @@
+{
+  "version": "1.0",
+  "description": "BL-05 Golden Set for RAG retrieval evaluation (issue #87). Each item declares a question grounded in knowledge_base/sources, the expected relevant source files, and (optionally) substrings that MUST appear in the retrieved chunks for context-recall scoring. Used by scripts/evaluate/evaluate_rag.py to compute Hit Rate@K, MRR, and Context Recall.",
+  "k_default": 5,
+  "items": [
+    {
+      "id": "RAG-001",
+      "question": "Как настроить SIP-транк в МАНГО ОФИС?",
+      "expected_sources": ["SIP_trunk-1.23.43.pdf"],
+      "expected_substrings": ["SIP"],
+      "subset": "smoke"
+    },
+    {
+      "id": "RAG-002",
+      "question": "Какие параметры авторизации SSO поддерживает Личный кабинет ВАТС?",
+      "expected_sources": ["MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"],
+      "expected_substrings": ["SSO"],
+      "subset": "smoke"
+    },
+    {
+      "id": "RAG-003",
+      "question": "Как пользоваться расширением Click2Call в Google Chrome?",
+      "expected_sources": ["Click2call_Chrome_UserManual_1_0.pdf"],
+      "expected_substrings": ["Click2Call"],
+      "subset": "smoke"
+    },
+    {
+      "id": "RAG-004",
+      "question": "Какие методы REST API доступны в VPBX API версии 1.9?",
+      "expected_sources": ["MangoOffice_VPBX_API_v1.9.pdf"],
+      "expected_substrings": ["API"],
+      "subset": "smoke"
+    },
+    {
+      "id": "RAG-005",
+      "question": "Как настроить ролевую модель в ВАТС?",
+      "expected_sources": ["Rolevaya-model-VATS_1_26_08.pdf"],
+      "expected_substrings": ["ролев"],
+      "subset": "smoke"
+    },
+    {
+      "id": "RAG-006",
+      "question": "Как создать сценарий скоринга в Речевой аналитике?",
+      "expected_sources": [
+        "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+        "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf"
+      ],
+      "expected_substrings": ["скоринг"]
+    },
+    {
+      "id": "RAG-007",
+      "question": "Какие отчёты доступны в модуле Quality Management?",
+      "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"],
+      "expected_substrings": ["Quality"]
+    },
+    {
+      "id": "RAG-008",
+      "question": "Как настроить интеграцию Речевой аналитики с КЦ?",
+      "expected_sources": ["RECHEVAYA-ANALITIKA_c-KATS_v.1.26.18.pdf"],
+      "expected_substrings": ["КАТС"]
+    },
+    {
+      "id": "RAG-009",
+      "question": "Где в Личном кабинете находится управление пользователями?",
+      "expected_sources": ["LK_manual_v-119_compressed.pdf"],
+      "expected_substrings": ["Личный"]
+    },
+    {
+      "id": "RAG-010",
+      "question": "Какие версии браузеров поддерживаются для Click2Call?",
+      "expected_sources": ["Click2call_Chrome_UserManual_1_0.pdf"],
+      "expected_substrings": ["Chrome"]
+    },
+    {
+      "id": "RAG-011",
+      "question": "Как настроить аутентификацию по SSO для ВАТС?",
+      "expected_sources": ["MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"],
+      "expected_substrings": ["аутентификац"]
+    },
+    {
+      "id": "RAG-012",
+      "question": "Какие коды ответов возвращает VPBX API при ошибках?",
+      "expected_sources": ["MangoOffice_VPBX_API_v1.9.pdf"],
+      "expected_substrings": ["ошибк"]
+    },
+    {
+      "id": "RAG-013",
+      "question": "Как настроить трансфер звонков в ВАТС?",
+      "expected_sources": ["Rolevaya-model-VATS_1_26_08.pdf", "LK_manual_v-119_compressed.pdf"],
+      "expected_substrings": ["звонк"]
+    },
+    {
+      "id": "RAG-014",
+      "question": "Как настроить запись разговоров в Личном кабинете?",
+      "expected_sources": ["LK_manual_v-119_compressed.pdf"],
+      "expected_substrings": ["запис"]
+    },
+    {
+      "id": "RAG-015",
+      "question": "Как создаются критерии оценки в Quality Management?",
+      "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"],
+      "expected_substrings": ["критер"]
+    },
+    {
+      "id": "RAG-016",
+      "question": "Где в Речевой аналитике посмотреть результаты скоринга разговоров?",
+      "expected_sources": [
+        "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"
+      ],
+      "expected_substrings": ["результат"]
+    },
+    {
+      "id": "RAG-017",
+      "question": "Какие модели ролей доступны для администратора ВАТС?",
+      "expected_sources": ["Rolevaya-model-VATS_1_26_08.pdf"],
+      "expected_substrings": ["администратор"]
+    },
+    {
+      "id": "RAG-018",
+      "question": "Какие протоколы поддерживает SIP-транк МАНГО ОФИС?",
+      "expected_sources": ["SIP_trunk-1.23.43.pdf"],
+      "expected_substrings": ["протокол"]
+    },
+    {
+      "id": "RAG-019",
+      "question": "Как настроить интеграцию VPBX API с внешними CRM?",
+      "expected_sources": ["MangoOffice_VPBX_API_v1.9.pdf"],
+      "expected_substrings": ["CRM"]
+    },
+    {
+      "id": "RAG-020",
+      "question": "Какие требования к серверу для развёртывания Речевой аналитики?",
+      "expected_sources": ["RECHEVAYA-ANALITIKA_1.26.18.pdf"],
+      "expected_substrings": ["сервер"]
+    },
+    {
+      "id": "RAG-021",
+      "question": "Как настроить уведомления в Quality Management?",
+      "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"],
+      "expected_substrings": ["уведомл"]
+    },
+    {
+      "id": "RAG-022",
+      "question": "Какие шаги нужны для подключения нового сотрудника в Личном кабинете?",
+      "expected_sources": ["LK_manual_v-119_compressed.pdf"],
+      "expected_substrings": ["сотрудник"]
+    },
+    {
+      "id": "RAG-023",
+      "question": "Как настроить отчёты по транкам SIP в МАНГО ОФИС?",
+      "expected_sources": ["SIP_trunk-1.23.43.pdf"],
+      "expected_substrings": ["отчёт"]
+    },
+    {
+      "id": "RAG-024",
+      "question": "Как сменить роль пользователя в ВАТС?",
+      "expected_sources": ["Rolevaya-model-VATS_1_26_08.pdf"],
+      "expected_substrings": ["роль"]
+    },
+    {
+      "id": "RAG-025",
+      "question": "Как изменить настройки скоринга для оператора в Речевой аналитике?",
+      "expected_sources": [
+        "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"
+      ],
+      "expected_substrings": ["оператор"]
+    },
+    {
+      "id": "RAG-026",
+      "question": "Как просмотреть метрики качества в QM?",
+      "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"],
+      "expected_substrings": ["метрик"]
+    },
+    {
+      "id": "RAG-027",
+      "question": "Какие параметры конфигурации Click2Call можно изменить?",
+      "expected_sources": ["Click2call_Chrome_UserManual_1_0.pdf"],
+      "expected_substrings": ["настройк"]
+    },
+    {
+      "id": "RAG-028",
+      "question": "Как настроить SSO для нескольких корпоративных доменов?",
+      "expected_sources": ["MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"],
+      "expected_substrings": ["домен"]
+    },
+    {
+      "id": "RAG-029",
+      "question": "Как зафиксировать сценарий контроля качества в QM?",
+      "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"],
+      "expected_substrings": ["сценар"]
+    },
+    {
+      "id": "RAG-030",
+      "question": "Как работают разделы Личного кабинета для администратора?",
+      "expected_sources": ["LK_manual_v-119_compressed.pdf"],
+      "expected_substrings": ["раздел"]
+    },
+    {
+      "id": "RAG-031",
+      "question": "Как настроить дашборд в Речевой аналитике для ВАТС-скоринга?",
+      "expected_sources": ["RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf"],
+      "expected_substrings": ["дашборд"]
+    },
+    {
+      "id": "RAG-032",
+      "question": "Какие интеграции с КАТС доступны в Речевой аналитике?",
+      "expected_sources": ["RECHEVAYA-ANALITIKA_c-KATS_v.1.26.18.pdf"],
+      "expected_substrings": ["КАТС"]
+    }
+  ]
+}
