@@ -195,6 +195,7 @@ def build_citation_link(
     source: str,
     page: Any,
     *,
+    section_signature: str = "",
     sources_dir: Path = SOURCES_DIR,
 ) -> str:
     """Return a clickable Markdown citation pinned to a PDF page.
@@ -207,11 +208,12 @@ def build_citation_link(
         return ""
     abs_path = (sources_dir / source).resolve()
     page_int = _coerce_page(page)
+    section_suffix = f", {section_signature}" if section_signature else ""
     if page_int:
-        label = f"{source}, стр. {page_int}"
+        label = f"{source}, стр. {page_int}{section_suffix}"
         target = f"file://{abs_path}#page={page_int}"
     else:
-        label = source
+        label = f"{source}{section_suffix}"
         target = f"file://{abs_path}"
     return f"[{label}]({target})"
 
@@ -240,6 +242,35 @@ def _first_page_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, int]:
     return mapping
 
 
+def _section_signature(metadata: Dict[str, Any]) -> str:
+    title = str(metadata.get("section_title") or "").strip()
+    number = str(metadata.get("section_number") or "").strip()
+    fallback = str(metadata.get("section_fallback") or "").strip()
+    if fallback and fallback != "none" and title:
+        return f"раздел: {title}"
+    if number and title:
+        return f"§{number} {title}"
+    if number:
+        return f"§{number}"
+    return title
+
+
+def _first_citation_meta_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Pick page/section metadata from the highest-ranked chunk per source."""
+    mapping: Dict[str, Dict[str, Any]] = {}
+    for chunk in chunks:
+        source = str(chunk.get("source") or "").strip()
+        if not source or source in mapping:
+            continue
+        meta = chunk.get("metadata") or {}
+        page = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
+        mapping[source] = {
+            "page": page,
+            "section_signature": _section_signature(meta),
+        }
+    return mapping
+
+
 def linkify_citations(
     answer: str,
     chunks: List[Dict[str, Any]],
@@ -254,17 +285,23 @@ def linkify_citations(
     """
     if not answer:
         return answer
-    page_by_source = _first_page_per_source(chunks)
-    if not page_by_source:
+    meta_by_source = _first_citation_meta_per_source(chunks)
+    if not meta_by_source:
         return answer
 
     pattern = re.compile(r"\[([^\[\]\(\)\n]+\.[A-Za-z0-9]{1,8})\](?!\()")
 
     def _replace(match: re.Match) -> str:
         source = match.group(1).strip()
-        if source not in page_by_source:
+        if source not in meta_by_source:
             return match.group(0)
-        link = build_citation_link(source, page_by_source[source], sources_dir=sources_dir)
+        meta = meta_by_source[source]
+        link = build_citation_link(
+            source,
+            meta.get("page"),
+            section_signature=str(meta.get("section_signature") or ""),
+            sources_dir=sources_dir,
+        )
         return link or match.group(0)
 
     return pattern.sub(_replace, answer)
@@ -279,8 +316,13 @@ def _format_context(chunks: List[Dict[str, Any]]) -> str:
         source = chunk.get("source", "unknown")
         text = (chunk.get("text") or "").strip()
         chunk_idx = chunk.get("chunk_idx")
+        meta = chunk.get("metadata") or {}
         suffix = f" #chunk={chunk_idx}" if chunk_idx is not None else ""
-        blocks.append(f"[{idx}] {source}{suffix}\n{text}")
+        page = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
+        page_label = f" стр. {page}" if page else ""
+        section_label = _section_signature(meta)
+        section_suffix = f" {section_label}" if section_label else ""
+        blocks.append(f"[{idx}] {source}{page_label}{section_suffix}{suffix}\n{text}")
     return "\n\n".join(blocks)
 
 
@@ -374,18 +416,26 @@ def render_chunks(chunks: List[Dict[str, Any]], debug: bool) -> None:
         chunk_idx = chunk.get("chunk_idx")
         meta = chunk.get("metadata") or {}
         page_number = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
+        section_signature = _section_signature(meta)
         score_label = (
             f"similarity={similarity:.4f}" if isinstance(similarity, float)
             else "similarity=n/a"
         )
         chunk_suffix = f" · chunk={chunk_idx}" if chunk_idx is not None else ""
         page_suffix = f" · стр. {page_number}" if page_number else ""
+        section_suffix = f" · {section_signature}" if section_signature else ""
         with st.expander(
-            f"#{i} — {source}{page_suffix}{chunk_suffix}  ({score_label})",
+            f"#{i} — {source}{page_suffix}{section_suffix}{chunk_suffix}  ({score_label})",
             expanded=(i == 1),
         ):
             if source and source != "unknown":
-                st.markdown(build_citation_link(source, page_number))
+                st.markdown(
+                    build_citation_link(
+                        source,
+                        page_number,
+                        section_signature=section_signature,
+                    )
+                )
             st.markdown("**Snippet**")
             st.write(truncate(chunk.get("text", "")))
             st.caption(

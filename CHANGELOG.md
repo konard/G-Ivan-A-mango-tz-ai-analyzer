@@ -10,6 +10,14 @@
 - **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
 
 ### Added
+- **MINOR: metadata inheritance & coverage improvement (BL-02 hardening, issue #109).**
+  `knowledge_base/indexing/build_index.py` добавляет per-document
+  `SectionPropagationState`: чанки без локального заголовка наследуют
+  ближайший `section_title` / `section_number`, получают audit-флаг
+  `section_inherited`, а после длинного разрыва по страницам контекст
+  сбрасывается для защиты от ghost inheritance. До первого заголовка
+  используется fallback по имени документа (`section_fallback=source_filename`),
+  чтобы UI-цитаты имели человекочитаемую подпись.
 - `docs/standards/llm-behavior.md` v1.0 — стандарт параметров декодирования LLM (BL-22, issue #101): канонический блок `decoding:` (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`), таблица рекомендуемых значений по провайдерам/режимам (DeepSeek, GigaChat, OpenRouter, Ollama), допустимый коридор изменений в Пилоте, обязательное аудит-логирование `decoding_lock applied`. Зарегистрирован в `docs/standards/README.md`.
 - **Prompt Library `prompts/` + `src/llm/prompt_loader.py` (BL-08, issue #94).**
   Все системные и few-shot-промпты вынесены из `src/llm/client.py` и
@@ -46,6 +54,12 @@
 - `tests/test_excel_exporter.py`, `tests/test_app_retry.py`, `tests/test_evaluate_quality.py` — регресс-тесты на FR-06 (4-колоночный экспорт), retry-by-RunID и контракт F1-оценщика.
 
 ### Changed
+- `configs/embedding_config.yaml` и `docs/standards/embedding-model.md` — добавлен
+  `metadata_coverage_min: 0.65`, параметры `section_propagation.*` и поле
+  `section_inherited` в обязательную схему метаданных (issue #109).
+- `src/ui/app.py` — кликабельные citation labels теперь включают
+  `section_title` / `section_number` или fallback-подпись раздела, если эти
+  поля есть в metadata чанка (issue #109).
 - `configs/embedding_config.yaml` — `chunk_size: 512`, `chunk_overlap: 64`, `min_chunk_size: 384`, `max_chunk_size: 768`, новый флаг `section_aware_chunking: true` (BL-06, issue #92). См. ⚠️ BREAKING CHANGE выше.
 - `src/rag/chunker.py` — `DEFAULT_CHUNK_SIZE = 512`, `DEFAULT_CHUNK_OVERLAP = 64`, `MIN_CHUNK_SIZE = 384`, `MAX_CHUNK_SIZE = 768`, добавлен section-aware splitter (вкл. по умолчанию); `TokenChunker.from_config` пробрасывает `section_aware_chunking` из YAML (BL-06, issue #92).
 - `docs/standards/embedding-model.md` — обновлён до v1.2 (BL-06, issue #92): §5.1 актуализирован под L1-параметры 512/64 + section-aware, добавлена запись в §8 «История изменений».

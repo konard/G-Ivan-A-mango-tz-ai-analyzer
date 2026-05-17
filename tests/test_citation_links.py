@@ -143,6 +143,25 @@ def test_linkify_citations_rewrites_only_known_sources(tmp_path: Path) -> None:
     assert "(file://" + str(sources / "unknown.pdf") not in rewritten
 
 
+def test_linkify_citations_includes_section_fallback_signature(tmp_path: Path) -> None:
+    chunks = [
+        {
+            "source": "doc.pdf",
+            "metadata": {
+                "page_number": 2,
+                "section_title": "MANGO OFFICE LK VATS Auth SSO",
+                "section_number": "document",
+                "section_fallback": "source_filename",
+            },
+        },
+    ]
+
+    rewritten = app.linkify_citations("См. [doc.pdf].", chunks, sources_dir=tmp_path)
+
+    assert "doc.pdf, стр. 2, раздел: MANGO OFFICE LK VATS Auth SSO" in rewritten
+    assert "#page=2" in rewritten
+
+
 def test_linkify_citations_leaves_existing_markdown_links_alone(tmp_path: Path) -> None:
     chunks = [{"source": "doc.pdf", "metadata": {"page_number": 4}}]
     answer = "См. [doc.pdf](https://example.com/doc.pdf)."

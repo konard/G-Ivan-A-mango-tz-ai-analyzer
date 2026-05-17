@@ -1,10 +1,11 @@
 """Tests for BL-02 chunk metadata extraction (issue #87).
 
-Every chunk persisted in ChromaDB must carry the six BL-02 / BL-16a / NFR-02
+Every chunk persisted in ChromaDB must carry the BL-02 / BL-16a / NFR-02
 required keys: ``source``, ``chunk_idx``, ``page_number``, ``section_title``,
-``section_number``, ``product``. These tests pin the small extraction
-helpers added to ``knowledge_base/indexing/build_index.py`` so regressions
-in heading detection or product inference surface quickly.
+``section_number``, ``product``, and the audit flag ``section_inherited``.
+These tests pin the small extraction helpers added to
+``knowledge_base/indexing/build_index.py`` so regressions in heading detection,
+propagation, or product inference surface quickly.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ def _load_module():
     return module
 
 
-def test_required_metadata_keys_are_six() -> None:
+def test_required_metadata_keys_include_section_audit_flag() -> None:
     module = _load_module()
     assert module.REQUIRED_METADATA_KEYS == (
         "source",
@@ -35,6 +36,7 @@ def test_required_metadata_keys_are_six() -> None:
         "section_title",
         "section_number",
         "product",
+        "section_inherited",
     )
 
 
@@ -90,6 +92,7 @@ def test_build_chunk_metadata_emits_all_required_keys() -> None:
     assert meta["section_number"] == "4.2"
     assert "Битрикс24" in meta["section_title"]
     assert meta["product"] == "VPBX API"
+    assert meta["section_inherited"] is False
 
 
 def test_build_chunk_metadata_falls_back_for_unknown_product() -> None:
@@ -103,7 +106,111 @@ def test_build_chunk_metadata_falls_back_for_unknown_product() -> None:
     assert meta["product"] == "unknown"
     assert meta["section_title"] == ""
     assert meta["section_number"] == ""
+    assert meta["section_inherited"] is False
     assert meta["page_number"] == 1
+
+
+def test_section_metadata_inherits_previous_heading_across_chunks() -> None:
+    module = _load_module()
+    state = module.SectionPropagationState(max_pages_without_heading=6)
+
+    first = module.build_chunk_metadata(
+        source="SIP_trunk-1.23.43.pdf",
+        chunk_idx=0,
+        page_number=3,
+        text="4.2 Настройка транка\nПервый фрагмент раздела.",
+        section_state=state,
+    )
+    second = module.build_chunk_metadata(
+        source="SIP_trunk-1.23.43.pdf",
+        chunk_idx=1,
+        page_number=4,
+        text="Продолжение инструкции без повторения заголовка.",
+        section_state=state,
+    )
+
+    assert first["section_number"] == "4.2"
+    assert first["section_inherited"] is False
+    assert second["section_number"] == "4.2"
+    assert second["section_title"] == first["section_title"]
+    assert second["section_inherited"] is True
+
+
+def test_section_metadata_resets_after_safety_window() -> None:
+    module = _load_module()
+    state = module.SectionPropagationState(
+        max_pages_without_heading=1,
+        fallback_to_document_title=False,
+    )
+
+    module.build_chunk_metadata(
+        source="SIP_trunk-1.23.43.pdf",
+        chunk_idx=0,
+        page_number=1,
+        text="2.1 Подключение\nТекст раздела.",
+        section_state=state,
+    )
+    stale = module.build_chunk_metadata(
+        source="SIP_trunk-1.23.43.pdf",
+        chunk_idx=1,
+        page_number=3,
+        text="Далёкий фрагмент без заголовка не должен наследовать 2.1.",
+        section_state=state,
+    )
+
+    assert stale["section_title"] == ""
+    assert stale["section_number"] == ""
+    assert stale["section_inherited"] is False
+
+
+def test_section_metadata_replaces_context_on_sibling_heading() -> None:
+    module = _load_module()
+    state = module.SectionPropagationState(max_pages_without_heading=6)
+
+    first = module.build_chunk_metadata(
+        source="LK_manual_v-119_compressed.pdf",
+        chunk_idx=0,
+        page_number=10,
+        text="4.1 Пользователи\nОписание пользователей.",
+        section_state=state,
+    )
+    sibling = module.build_chunk_metadata(
+        source="LK_manual_v-119_compressed.pdf",
+        chunk_idx=1,
+        page_number=11,
+        text="4.2 Роли\nОписание ролей.",
+        section_state=state,
+    )
+    inherited = module.build_chunk_metadata(
+        source="LK_manual_v-119_compressed.pdf",
+        chunk_idx=2,
+        page_number=12,
+        text="Продолжение описания ролей.",
+        section_state=state,
+    )
+
+    assert first["section_number"] == "4.1"
+    assert sibling["section_number"] == "4.2"
+    assert inherited["section_number"] == "4.2"
+    assert inherited["section_title"] == sibling["section_title"]
+    assert inherited["section_inherited"] is True
+
+
+def test_section_metadata_uses_document_title_fallback_before_first_heading() -> None:
+    module = _load_module()
+    state = module.SectionPropagationState(fallback_to_document_title=True)
+
+    meta = module.build_chunk_metadata(
+        source="MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+        chunk_idx=0,
+        page_number=1,
+        text="Титульный фрагмент без нумерованного заголовка.",
+        section_state=state,
+    )
+
+    assert meta["section_number"] == "document"
+    assert meta["section_title"] == "MANGO OFFICE LK VATS Auth SSO"
+    assert meta["section_inherited"] is False
 
 
 def test_metadata_coverage_counts_fully_filled_chunks() -> None:
@@ -115,11 +222,26 @@ def test_metadata_coverage_counts_fully_filled_chunks() -> None:
         "section_title": "Title",
         "section_number": "1.1",
         "product": "VPBX API",
+        "section_inherited": False,
     }
     partial = dict(full, section_title="", section_number="")
     metadatas = [full, full, full, partial, full]
     coverage = module._metadata_coverage(metadatas)
     assert 0.79 < coverage < 0.81
+
+
+def test_metadata_coverage_treats_zero_chunk_idx_as_present() -> None:
+    module = _load_module()
+    meta = {
+        "source": "a.pdf",
+        "chunk_idx": 0,
+        "page_number": 1,
+        "section_title": "Title",
+        "section_number": "1",
+        "product": "VPBX API",
+        "section_inherited": False,
+    }
+    assert module._metadata_coverage([meta]) == 1.0
 
 
 def test_load_pages_md_returns_single_page(tmp_path: Path) -> None:

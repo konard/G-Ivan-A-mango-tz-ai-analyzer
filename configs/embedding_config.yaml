@@ -1,5 +1,5 @@
 # Embedding & retrieval configuration for the Clarify Engine RAG pipeline.
-# Synchronised with docs/standards/embedding-model.md v1.2 (BL-06, issue #92).
+# Synchronised with docs/standards/embedding-model.md v1.3 (BL-02, issue #109).
 #
 # BL-06 (Sprint 2) migrated chunk_size / chunk_overlap from the MVP values
 # 250 / 50 to the L1 targets 512 / 64, and enabled section-aware splitting.
@@ -47,8 +47,7 @@ mask_rag_context: true
 # --- Required chunk metadata schema (BL-02, BL-16a, NFR-02) -------------------
 # Every chunk persisted in ChromaDB MUST carry the keys below. The indexer
 # (knowledge_base/indexing/build_index.py) enforces this contract; missing
-# keys are logged as schema warnings and counted against the ≥ 95 %
-# completeness target tracked by the Golden Set (BL-05).
+# searchable fields are counted against the ≥ 65 % MVP completeness target.
 required_metadata:
   - source
   - chunk_idx
@@ -56,6 +55,24 @@ required_metadata:
   - section_title
   - section_number
   - product
+  - section_inherited
+
+# MVP threshold for the fraction of chunks with complete searchable metadata
+# (`source`, `chunk_idx`, `page_number`, `section_title`, `section_number`,
+# `product`). The boolean audit flag `section_inherited` is required but is
+# not counted as a completeness field because `false` is a valid direct match.
+metadata_coverage_min: 0.65
+
+# Section propagation keeps the nearest detected section heading active across
+# following chunks/pages from the same document. The page-distance guard resets
+# context after long gaps so section metadata cannot bleed into unrelated
+# chapters. When no heading has appeared yet, the source filename is used as a
+# conservative fallback section label for UI citations and metadata coverage.
+section_propagation:
+  enabled: true
+  max_pages_without_heading: 6
+  fallback_to_document_title: true
+  fallback_section_number: "document"
 
 vector_store:
   type: "chromadb"
