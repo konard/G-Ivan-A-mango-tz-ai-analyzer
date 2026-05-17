@@ -26,7 +26,7 @@ import logging
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import streamlit as st
 

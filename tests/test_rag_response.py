@@ -205,9 +205,6 @@ def test_call_openrouter_rag_raises_retriable_error_on_429(monkeypatch) -> None:
 
     monkeypatch.setattr(req_module, "post", lambda *a, **kw: fake_response)
 
-    import importlib
-    import sys
-
     # Patch requests inside the client module scope
     fake_requests = mock.MagicMock()
     fake_requests.post.return_value = fake_response
@@ -216,8 +213,6 @@ def test_call_openrouter_rag_raises_retriable_error_on_429(monkeypatch) -> None:
 
     # Use a direct call to _call_openrouter_rag with a fake api key in env
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-
-    import importlib as _il
 
     # Call _call_openrouter_rag which is defined at module level
     from src.llm.client import _call_openrouter_rag

@@ -178,7 +178,7 @@ def test_classify_requirement_masks_requirement_and_context() -> None:
         {"text": "API endpoint: api.corp.local/docs", "source": "api.md"},
     ]
 
-    result = client.classify_requirement(req_text, context_chunks)
+    client.classify_requirement(req_text, context_chunks)
 
     assert len(captured_messages) == 1
     user_msg = captured_messages[0]["user"]
