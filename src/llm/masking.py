@@ -213,3 +213,186 @@ def mask_context_chunks(
             )
         result.append(masked_chunk)
     return result
+
+
+# --- BL-23: log sanitization (issue #87) --------------------------------------
+# Fields preserved verbatim — they are needed for trace correlation across
+# FR-08 logs and `reports/rag-*.json` artifacts, and they MUST NOT carry PII
+# by construction (they are UUIDs / enums / identifiers).
+_SANITIZE_PRESERVED_KEYS: tuple[str, ...] = (
+    "run_id",
+    "requirement_id",
+    "level",
+    "timestamp",
+    "logger",
+    "provider",
+    "classification",
+)
+# String fields whose value is masked through the YAML regex set.
+_SANITIZE_TEXT_FIELDS: tuple[str, ...] = (
+    "message",
+    "payload",
+    "context",
+    "answer",
+    "question",
+    "requirement_text",
+    "user_prompt",
+    "system_prompt",
+)
+# Environment variable name suffixes treated as secrets.
+_SECRET_ENV_SUFFIXES: tuple[str, ...] = ("_API_KEY", "_TOKEN", "_SECRET", "_AUTH")
+# Default truncation threshold for ``payload`` (32 KB per ADR-003 §4.3).
+DEFAULT_PAYLOAD_TRUNCATE_BYTES: int = 32 * 1024
+REDACTED_MARKER: str = "***REDACTED***"
+
+
+def _looks_like_secret_env(key: str) -> bool:
+    if not isinstance(key, str):
+        return False
+    upper = key.upper()
+    return any(upper.endswith(suffix) for suffix in _SECRET_ENV_SUFFIXES)
+
+
+def _truncate_payload(value: str, limit: int) -> str:
+    encoded = value.encode("utf-8", errors="ignore")
+    if len(encoded) <= limit:
+        return value
+    head = encoded[: max(0, limit - 32)].decode("utf-8", errors="ignore")
+    return f"{head}…[TRUNCATED:{len(encoded)}B]"
+
+
+def _sanitize_string(
+    value: str,
+    *,
+    patterns: List[CompiledPattern],
+    field_name: Optional[str] = None,
+    truncate_bytes: int,
+) -> str:
+    """Apply regex masks and (for ``payload``) length-cap to a single string."""
+    if not value:
+        return value
+    masked = _apply_patterns(value, patterns, context=field_name)
+    if field_name == "payload":
+        masked = _truncate_payload(masked, truncate_bytes)
+    return masked
+
+
+def _sanitize_value(
+    value: Any,
+    *,
+    patterns: List[CompiledPattern],
+    field_name: Optional[str],
+    truncate_bytes: int,
+) -> Any:
+    """Recursive sanitiser used by :func:`sanitize_log_record`.
+
+    - Preserves dict/list nesting (returns new containers, never mutates).
+    - Applies masking only to string leaves.
+    - Recognises the ``chunks`` list (or any list of dicts with a ``text``
+      key) and masks chunk text without disturbing other metadata.
+    """
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _sanitize_string(
+            value,
+            patterns=patterns,
+            field_name=field_name,
+            truncate_bytes=truncate_bytes,
+        )
+    if isinstance(value, dict):
+        masked: Dict[str, Any] = {}
+        for key, sub in value.items():
+            if key in _SANITIZE_PRESERVED_KEYS:
+                masked[key] = sub
+                continue
+            if _looks_like_secret_env(key):
+                masked[key] = REDACTED_MARKER
+                continue
+            masked[key] = _sanitize_value(
+                sub,
+                patterns=patterns,
+                field_name=key if isinstance(key, str) else None,
+                truncate_bytes=truncate_bytes,
+            )
+        return masked
+    if isinstance(value, list):
+        return [
+            _sanitize_value(
+                item,
+                patterns=patterns,
+                field_name=field_name,
+                truncate_bytes=truncate_bytes,
+            )
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _sanitize_value(
+                item,
+                patterns=patterns,
+                field_name=field_name,
+                truncate_bytes=truncate_bytes,
+            )
+            for item in value
+        )
+    # Unknown types are converted to string then masked, never logged raw.
+    return _sanitize_string(
+        str(value),
+        patterns=patterns,
+        field_name=field_name,
+        truncate_bytes=truncate_bytes,
+    )
+
+
+def sanitize_log_record(
+    record: Dict[str, Any],
+    *,
+    config_path: str = DEFAULT_MASKING_CONFIG_PATH,
+    truncate_bytes: int = DEFAULT_PAYLOAD_TRUNCATE_BYTES,
+) -> Dict[str, Any]:
+    """Sanitise a log/report record before serialisation.
+
+    BL-23 alias for ADR-003 §4.3 ``sanitize_for_log()``. The function:
+
+    - Applies every regex from ``configs/masking_rules.yaml`` to string leaves
+      of the record (``message``, ``payload``, ``context``, ``answer``,
+      ``question``, ``requirement_text`` and any nested ``chunks[*].text``).
+    - Redacts environment-variable values whose key looks like a secret
+      (``*_API_KEY``, ``*_TOKEN``, ``*_SECRET``, ``*_AUTH``) — typical entries
+      in ``extra={"env": {...}}`` blocks.
+    - Truncates the ``payload`` field once it exceeds ``truncate_bytes``
+      (defaults to 32 KB) to prevent CI artefact explosion.
+    - Preserves trace identifiers (``run_id``, ``requirement_id``, ``level``,
+      ``timestamp``, ``logger``, ``provider``, ``classification``) verbatim.
+
+    Args:
+        record: The log-record dict to sanitise. The input is not mutated.
+        config_path: Path to masking rules YAML config.
+        truncate_bytes: Max payload size in bytes before truncation.
+
+    Returns:
+        A new dict with sensitive fragments replaced by mask tokens.
+    """
+    if not isinstance(record, dict):
+        raise TypeError(
+            "sanitize_log_record expects a dict; got " + type(record).__name__
+        )
+    if config_path not in _masking_cache:
+        _masking_cache[config_path] = _compile_masking_patterns(_load_yaml(config_path))
+    patterns = _masking_cache[config_path]
+    sanitized: Dict[str, Any] = {}
+    for key, value in record.items():
+        if key in _SANITIZE_PRESERVED_KEYS:
+            sanitized[key] = value
+            continue
+        if _looks_like_secret_env(key):
+            sanitized[key] = REDACTED_MARKER
+            continue
+        sanitized[key] = _sanitize_value(
+            value,
+            patterns=patterns,
+            field_name=key if isinstance(key, str) else None,
+            truncate_bytes=truncate_bytes,
+        )
+    return sanitized
