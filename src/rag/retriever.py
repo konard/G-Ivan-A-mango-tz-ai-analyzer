@@ -819,6 +819,17 @@ class HybridChromaRetriever:
             top_k=effective_top_k,
         )
 
+        logger.info(
+            "HybridChromaRetriever.search: bm25_hits=%d dense_hits=%d fused=%d "
+            "rrf_k=%d top_k=%d collection=%s",
+            len(bm25_chunks),
+            len(dense_chunks),
+            len(fused),
+            self.rrf_k,
+            effective_top_k,
+            self.collection_name,
+        )
+
         dense_by_key = {(c.get("source"), c.get("chunk_idx")): c for c in dense_chunks}
         results: List[Dict[str, Any]] = []
         for item in fused:

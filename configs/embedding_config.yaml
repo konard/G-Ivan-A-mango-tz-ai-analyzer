@@ -1,22 +1,32 @@
 # Embedding & retrieval configuration for the Clarify Engine RAG pipeline.
-# Synchronised with docs/standards/embedding-model.md v1.1 (BL-16a, issue #87).
+# Synchronised with docs/standards/embedding-model.md v1.2 (BL-06, issue #92).
 #
-# NOTE: chunk_size / chunk_overlap intentionally remain 250 / 50 in Sprint 1
-# (BL-16a is documentation + flags only). The migration to chunk_size=512 /
-# overlap=64 happens in BL-16b after BL-06 ships in Sprint 2.
+# BL-06 (Sprint 2) migrated chunk_size / chunk_overlap from the MVP values
+# 250 / 50 to the L1 targets 512 / 64, and enabled section-aware splitting.
+# Changing the window size is a BREAKING CHANGE for any pre-existing ChromaDB
+# collection — operators must rebuild the index after this change ships.
 
 model_name: "BAAI/bge-m3"
 max_length: 512
 normalize_embeddings: true
 
-# --- Chunking (current MVP values; will move to 512/64 in BL-16b) -------------
-chunk_size: 250
-chunk_overlap: 50
-min_chunk_size: 200
-max_chunk_size: 300
+# --- Chunking (BL-06 L1 targets; see RAG_OPTIMIZATION_ANALYSIS.md §3.1) -------
+chunk_size: 512
+chunk_overlap: 64
+min_chunk_size: 384
+max_chunk_size: 768
+
+# When `section_aware_chunking: true` the chunker first splits the input on
+# heading boundaries (Markdown `#`, dotted numeric sections like `7.3.6`, and
+# all-caps PDF headers) before applying the token window. The heading itself
+# is preserved at the top of the first chunk of its section so downstream
+# metadata (BL-02 section_title / section_number) stays stable.
+section_aware_chunking: true
 
 # --- Retrieval ----------------------------------------------------------------
-top_k: 3
+# BL-01: top_k=5 is the production contract for the Streamlit UI → LLM context
+# window. rrf_k=60 is the Reciprocal Rank Fusion constant per ADR-001 §4.2.
+top_k: 5
 rrf_k: 60
 
 # --- STRICT_MODE (BL-03, BL-16a, CONCEPT §7 R-01) -----------------------------

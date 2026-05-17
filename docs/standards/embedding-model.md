@@ -1,6 +1,6 @@
 # 🧮 Standard: Embedding Model
 
-**Версия:** 1.1 | **Дата:** 2026-05-17 | **Статус:** Approved
+**Версия:** 1.2 | **Дата:** 2026-05-17 | **Статус:** Approved
 
 ---
 
@@ -28,23 +28,27 @@
 - Требование ИБ перейти на 100% российского вендора моделей эмбеддингов.
 - Появление верифицированной российской модели с качеством ≥ `BAAI/bge-m3` на русскоязычных бенчмарках.
 
-## 5. Chunking, Metadata Schema & RAG Flags (Sprint 1 / BL-16a)
+## 5. Chunking, Metadata Schema & RAG Flags (Sprint 2 / BL-06)
 
-Этот раздел добавлен в версии 1.1 (BL-16a, issue #87) и фиксирует контракты,
-которые подключаются к стандарту до изменения кода BL-02 / BL-03 / BL-04.
+Этот раздел подключает контракты chunking-параметров и схемы метаданных к
+стандарту. Версия 1.1 (BL-16a, issue #87) добавила сам раздел; версия 1.2
+(BL-06, issue #92) перевела `chunk_size`/`chunk_overlap` на L1-параметры
+`512 / 64` и расширила guardrails.
 
-### 5.1 Chunking parameters (MVP, Sprint 1)
+### 5.1 Chunking parameters (Sprint 2, BL-06 L1)
 | Параметр | Значение | Источник | Комментарий |
 |----------|----------|----------|-------------|
-| `chunk_size` | **250** ток. | `configs/embedding_config.yaml` | MVP-окно; будет поднято до 512 в BL-16b (Sprint 2) после BL-06. |
-| `chunk_overlap` | **50** ток. | `configs/embedding_config.yaml` | MVP-перекрытие; будет поднято до 64 в BL-16b. |
-| `min_chunk_size` | **200** ток. | `configs/embedding_config.yaml` | Нижняя граница (соответствует [CONCEPT §6.2](../CONCEPT.md#62-индексация-базы-знаний)). |
-| `max_chunk_size` | **300** ток. | `configs/embedding_config.yaml` | Верхняя граница; код-валидация в `src/rag/chunker.py`. |
+| `chunk_size` | **512** ток. | `configs/embedding_config.yaml` | L1-окно, согласовано с [`RAG_OPTIMIZATION_ANALYSIS.md §3.1`](../RAG_OPTIMIZATION_ANALYSIS.md). |
+| `chunk_overlap` | **64** ток. | `configs/embedding_config.yaml` | ≈ 12.5 % от окна (рекомендация LlamaIndex). |
+| `min_chunk_size` | **384** ток. | `configs/embedding_config.yaml` | Нижняя граница — guardrail для пограничных случаев в `src/rag/chunker.py`. |
+| `max_chunk_size` | **768** ток. | `configs/embedding_config.yaml` | Верхняя граница; bge-m3 эффективен на 256–1024 ток. |
+| `section_aware_chunking` | **`true`** | `configs/embedding_config.yaml` | Section-aware splitter режет текст по заголовкам Markdown / нумерованным разделам / CAPS-блокам до применения token-окна. |
 
-> ⚠️ **BL-16a НЕ меняет `chunk_size`/`chunk_overlap`.** Сдвиг к `512 / 64`
-> выполняется задачей BL-16b после внедрения BL-06 (section-aware splitter).
-> До этого момента стандарт декларирует целевые границы (`min`/`max`), а не
-> новые значения окна.
+> ⚠️ **BREAKING CHANGE.** Изменение `chunk_size` с 250 на 512 меняет структуру
+> индекса ChromaDB. Сразу после мерджа BL-06 владелец задачи выполняет полный
+> reindex локально (`python knowledge_base/indexing/build_index.py`) и
+> прогоняет Golden Set (BL-05) для валидации регрессий по метрикам
+> retrieval / answer-quality.
 
 ### 5.2 Required chunk metadata schema
 Каждый чанк, сохраняемый в ChromaDB, **обязан** содержать следующие ключи в
@@ -106,3 +110,4 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 |--------|------|-----------|
 | 1.0 | 2026-05-12 | Первая версия стандарта: фиксация `BAAI/bge-m3` как модели эмбеддингов MVP и Production. |
 | 1.1 | 2026-05-17 | BL-16a (issue #87): добавлен §5 с контрактами chunking-параметров, обязательной схемы метаданных (`page_number`, `section_title`, `section_number`, `product`), флагов `strict_rag_mode` / `strict_min_score` (BL-03) и `mask_rag_context` (BL-04). `chunk_size` / `chunk_overlap` не меняются — это сдвиг в BL-16b (Sprint 2). |
+| 1.2 | 2026-05-17 | BL-06 (issue #92): `chunk_size` поднят с 250 до **512**, `chunk_overlap` — с 50 до **64**, guardrails расширены до 384–768 ток. Включён section-aware splitter (`section_aware_chunking: true`). **BREAKING CHANGE** для существующего индекса ChromaDB — требуется полный reindex после мерджа. |

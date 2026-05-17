@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### ⚠️ BREAKING CHANGE
+- **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
+
 ### Added
 - **Prompt Library `prompts/` + `src/llm/prompt_loader.py` (BL-08, issue #94).**
   Все системные и few-shot-промпты вынесены из `src/llm/client.py` и
@@ -22,6 +25,11 @@
   и DoD — [`docs/ADR/004-prompt-management.md`](docs/ADR/004-prompt-management.md);
   изменения промптов — `prompts/prompt_changelog.md`; 16 unit-кейсов в
   `tests/test_prompt_loader.py`.
+- **BL-07 (issue #93):** два режима работы KB-тестового UI (`src/ui/app.py`) — **«📊 Анализ ТЗ»** (полностью stateless, токен-cost совпадает с pre-BL-07 baseline) и **«💬 Консультация по документации»** (stateful чат, история ≤ `ui.max_history_messages` сообщений, по умолчанию 6). Переключатель режимов в `st.sidebar.radio`, кнопка «🧹 Очистить историю», автоматический сброс истории при смене режима (`_ensure_mode_state`), инлайн истории в `<history>`-блок промпта без изменения сигнатуры `LLMClient.generate_rag_response()`, JSON-лог `ui_prompt_built mode=… history_messages=… approx_tokens=…` на каждый вызов. Конфиг — `configs/llm_config.yaml` (`ui.max_history_messages`). ADR — [`docs/ADR/004-ui-operation-modes.md`](docs/ADR/004-ui-operation-modes.md); обновлён `docs/CONCEPT.md` §6.2 (компонент UI) и §6.8 (режимы работы UI). Регресс-тесты — `tests/test_ui_modes.py`.
+- `src/rag/chunker.py::split_sections` и флаг `section_aware_chunking` в `configs/embedding_config.yaml` — section-aware splitter режет текст по заголовкам (Markdown `#`, нумерованные разделы `\d+(\.\d+)+`, локализованные `Раздел N` / `Section N`, CAPS-блоки PDF) до применения token-окна; заголовок остаётся в первом чанке секции (BL-06, issue #92).
+- `tests/test_chunker.py` — unit-тесты L1-контракта: дефолты 512/64, guardrails 384–768, корректность section-aware разбиения и пропагация флагов из конфига (BL-06, issue #92).
+- `src/rag/retriever.py` — `HybridChromaRetriever.search()` теперь пишет INFO-лог `bm25_hits=… dense_hits=… fused=… rrf_k=60 top_k=…` на каждый запрос. Лог подтверждает, что в production-пути UI отрабатывает именно фьюжн BM25 + Dense + RRF, а не только векторный поиск (BL-01 DoD, issue #91).
+- `tests/test_hybrid_chroma_retriever.py::test_hybrid_chroma_search_logs_fusion_breakdown` — регресс-тест, проверяющий формат строки фьюжн-лога (issue #91).
 - `src/ui/app.py` — Streamlit UI для ручного тестирования RAG-пайплайна по базе знаний: поле запроса, кнопка «Search KB», вывод ответа LLM в Markdown, секция «Source Chunks» с именем файла, обрезанным текстом и similarity-скором; сайдбар с тоглом Debug Mode и выбором провайдера (DeepSeek / GigaChat). ChromaDB читается из `knowledge_base/vector_store/` (коллекция `clarify_engine_kb`), эмбеддер `BAAI/bge-m3`, конфиг провайдеров — `configs/llm_config.yaml`, секреты — `.env`. Запуск: `streamlit run src/ui/app.py` (issue #70).
 - `python-dotenv` в `requirements.txt` — необходим UI для чтения `.env`.
 - `.env.example` — шаблон переменных окружения с плейсхолдерами `DEEPSEEK_API_KEY`, `GIGACHAT_API_KEY` и флагами `USE_TEST_DATA_MODE`, `STRICT_EMBEDDER` (issue #59; `YANDEXGPT_API_KEY` исключён в issue #64).
@@ -37,6 +45,9 @@
 - `tests/test_excel_exporter.py`, `tests/test_app_retry.py`, `tests/test_evaluate_quality.py` — регресс-тесты на FR-06 (4-колоночный экспорт), retry-by-RunID и контракт F1-оценщика.
 
 ### Changed
+- `configs/embedding_config.yaml` — `chunk_size: 512`, `chunk_overlap: 64`, `min_chunk_size: 384`, `max_chunk_size: 768`, новый флаг `section_aware_chunking: true` (BL-06, issue #92). См. ⚠️ BREAKING CHANGE выше.
+- `src/rag/chunker.py` — `DEFAULT_CHUNK_SIZE = 512`, `DEFAULT_CHUNK_OVERLAP = 64`, `MIN_CHUNK_SIZE = 384`, `MAX_CHUNK_SIZE = 768`, добавлен section-aware splitter (вкл. по умолчанию); `TokenChunker.from_config` пробрасывает `section_aware_chunking` из YAML (BL-06, issue #92).
+- `docs/standards/embedding-model.md` — обновлён до v1.2 (BL-06, issue #92): §5.1 актуализирован под L1-параметры 512/64 + section-aware, добавлена запись в §8 «История изменений».
 - `docs/ADR/003-multi-agent-orchestration-draft.md` обновлён до **Concept (Review) v1.1** (issue #81): добавлены §2.1.1 контракт диспетчеризации очереди (`asyncio.Queue` / Redis Streams + `Semaphore` + backpressure), §2.4 единый event envelope, §2.5 контракт отказоустойчивости `Data-Enricher` (retry / DLQ / healthcheck `/ready` & `/live`, изоляция от online-пайплайна); §3.2 уточнена кластеризация Market-Analyst (`centroid_distance + min_cluster_size + manual_validation_threshold` вместо `cosine ≥ 0.95`); **новый §4 Security & Compliance** — prompt-injection mitigation, data-poisoning prevention, `sanitize_for_log()`, access control offline-агентов, mapping на ISO/IEC 23894 и NIST AI RMF; §7 расширен инфраструктурными триггерами (RAM ≥ 16 ГБ, CPU ≥ 4 cores, выделенная нода для offline-агентов); **новый §8 Trace & Observability** — additive-расширение FR-08 форматом `agent_trace` (`agent_id`, `step`, `input_hash`, `output_hash`, `latency_ms`, `attempt`, `outcome`). Статус документа остаётся `Concept`; кодовые изменения по-прежнему заблокированы до `Accepted`.
 - Проект переименован: `mango-tz-ai-analyzer` → `clarify-engine-ai`. Удалены все упоминания `mango`, `Mango Office`, `MANGO`, `Манго` из кода, конфигов, тестов, промптов и документации; заменены на нейтральные термины (`internal_kb`, `product_docs`, «целевая платформа», `clarify_engine_kb`). Файл `knowledge_base/sources/mango_crm_integration.md` переименован в `crm_integration.md` (issue #59).
 - `docs/CONCEPT.md` обновлён до версии 2.0 (issue #37): развёрнутая редакция SSoT-документа с согласованной структурой документации, детализированными FR-01..FR-08 и критериями приёмки, полным набором НФТ NFR-01..NFR-09, расширенной матрицей рисков R-01..R-09, Exit Criteria для MVP / Пилота / Масштабирования, глоссарием и реестром связанных документов.
