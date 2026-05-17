@@ -38,11 +38,31 @@ from src.llm.validator import extract_json, validate_payload  # noqa: F401 - re-
 logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_CONFIG_PATH = "configs/llm_config.yaml"
+DEFAULT_EMBEDDING_CONFIG_PATH = "configs/embedding_config.yaml"
 DEFAULT_MASKING_CONFIG_PATH = "configs/masking_rules.yaml"
 DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
 HTTP_TIMEOUT_SECONDS = 30
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+# --- BL-22: temperature lock (issue #87) --------------------------------------
+# Centralised decoding parameters enforced on every provider call. Per-prompt
+# overrides are forbidden — `LLMClient` merges these onto the provider config
+# only when a `decoding:` block is present in `configs/llm_config.yaml`, so the
+# legacy config that ships without the block keeps its previous behaviour.
+DECODING_PARAM_KEYS: tuple[str, ...] = ("temperature", "top_p", "seed", "max_tokens")
+
+# --- BL-03: STRICT_MODE deterministic fallback (issue #87) --------------------
+# Returned by `classify_requirement` when the retriever yielded no chunks or
+# every chunk scored below `strict_min_score`. The LLM is **not** called.
+STRICT_MODE_REASONING = (
+    "STRICT_MODE: релевантного контекста в базе знаний не найдено. "
+    "Требование помечено как НД без обращения к LLM (защита от галлюцинаций R-01)."
+)
+STRICT_MODE_RECOMMENDATIONS = (
+    "Уточните формулировку требования или пополните knowledge_base/ "
+    "соответствующими источниками; после переиндексации повторите запуск."
+)
 
 # Ordered fallback chain for free-text RAG generation (issue #73).
 # 1) GigaChat (OAuth2)  →  2) OpenRouter (free models)  →  3) Ollama (local)
@@ -169,8 +189,10 @@ class LLMClient:
         masking_config_path: str = DEFAULT_MASKING_CONFIG_PATH,
         prompt_path: str = DEFAULT_PROMPT_PATH,
         provider_callers: Optional[Dict[str, ProviderCall]] = None,
+        embedding_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.config = llm_config or {}
+        self.embedding_config = embedding_config or {}
         self.masking_config_path = masking_config_path
         self.system_prompt = self._load_system_prompt(prompt_path)
         self.provider_callers: Dict[str, ProviderCall] = {
@@ -188,12 +210,14 @@ class LLMClient:
         masking_config_path: str = DEFAULT_MASKING_CONFIG_PATH,
         prompt_path: str = DEFAULT_PROMPT_PATH,
         provider_callers: Optional[Dict[str, ProviderCall]] = None,
+        embedding_config_path: str = DEFAULT_EMBEDDING_CONFIG_PATH,
     ) -> "LLMClient":
         return cls(
             llm_config=_load_llm_config(config_path),
             masking_config_path=masking_config_path,
             prompt_path=prompt_path,
             provider_callers=provider_callers,
+            embedding_config=_load_llm_config(embedding_config_path),
         )
 
     @staticmethod
@@ -215,6 +239,113 @@ class LLMClient:
     def use_test_data_mode(self) -> bool:
         return bool(self.config.get("use_test_data_mode", False))
 
+    @property
+    def mask_rag_context_enabled(self) -> bool:
+        """BL-04: read ``mask_rag_context`` from llm or embedding config.
+
+        Looked up in both files for safety — the canonical flag lives in
+        ``configs/embedding_config.yaml`` but a mirror in ``llm_config.yaml``
+        is allowed so ``LLMClient`` does not have to parse the embedding YAML.
+        Defaults to ``True`` (data residency by default).
+        """
+        if "mask_rag_context" in self.config:
+            return bool(self.config["mask_rag_context"])
+        if "mask_rag_context" in self.embedding_config:
+            return bool(self.embedding_config["mask_rag_context"])
+        return True
+
+    @property
+    def strict_rag_mode(self) -> bool:
+        """BL-03: STRICT_MODE flag from ``configs/embedding_config.yaml``."""
+        return bool(self.embedding_config.get("strict_rag_mode", False))
+
+    @property
+    def strict_min_score(self) -> float:
+        """BL-03: minimum RRF-fusion score for a chunk to count as relevant."""
+        try:
+            return float(self.embedding_config.get("strict_min_score", 0.30))
+        except (TypeError, ValueError):
+            return 0.30
+
+    def _decoding_params(self) -> Dict[str, Any]:
+        """BL-22: return decoding params only when the ``decoding:`` block is set.
+
+        Returning an empty dict when the block is absent keeps the legacy
+        ``test_generate_rag_response_passes_provider_config`` assertion intact
+        (it compares the captured cfg by exact equality).
+        """
+        decoding = self.config.get("decoding")
+        if not isinstance(decoding, dict):
+            return {}
+        params: Dict[str, Any] = {}
+        for key in DECODING_PARAM_KEYS:
+            if key in decoding and decoding[key] is not None:
+                params[key] = decoding[key]
+        return params
+
+    def _merge_decoding(self, provider_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy of ``provider_cfg`` with decoding params merged in.
+
+        Decoding params override per-provider settings (BL-22: prompts and
+        provider overrides cannot beat the centralised lock). A no-op when the
+        ``decoding:`` block is not configured.
+        """
+        decoding = self._decoding_params()
+        if not decoding:
+            return provider_cfg
+        merged = dict(provider_cfg)
+        merged.update(decoding)
+        return merged
+
+    @staticmethod
+    def _chunk_score(chunk: Dict[str, Any]) -> Optional[float]:
+        """Best-effort numeric score extraction from a retriever chunk.
+
+        HybridRetriever uses ``score`` (RRF), ChromaRetriever uses
+        ``similarity`` (cosine). Returns ``None`` when the chunk shape is
+        unexpected so the strict-mode guard can fall back to ``len() > 0``.
+        """
+        for key in ("score", "similarity", "rrf_score"):
+            value = chunk.get(key)
+            if isinstance(value, (int, float)):
+                return float(value)
+        return None
+
+    def _strict_mode_blocks_call(
+        self, chunks: Sequence[Dict[str, Any]]
+    ) -> Optional[str]:
+        """BL-03: return a reason string if STRICT_MODE should skip the LLM call."""
+        if not self.strict_rag_mode:
+            return None
+        if not chunks:
+            return "empty_context"
+        threshold = self.strict_min_score
+        scores = [self._chunk_score(c) for c in chunks]
+        numeric = [s for s in scores if s is not None]
+        if numeric and max(numeric) < threshold:
+            return f"low_score(max={max(numeric):.3f} < {threshold:.3f})"
+        return None
+
+    def _strict_mode_result(
+        self, reason: str, requirement_id: Optional[str]
+    ) -> "ClassificationResult":
+        """Deterministic ``НД`` fallback used when STRICT_MODE blocks the call."""
+        logger.info(
+            "strict_mode=true skipped LLM call: %s",
+            reason,
+            extra={"requirement_id": requirement_id} if requirement_id else None,
+        )
+        return ClassificationResult(
+            classification="НД",
+            reasoning=f"{STRICT_MODE_REASONING} (причина: {reason})",
+            citations=[],
+            confidence=0.0,
+            requires_ba_review=True,
+            recommendations=STRICT_MODE_RECOMMENDATIONS,
+            provider="strict_mode",
+            raw={"strict_mode": True, "reason": reason},
+        )
+
     def _ordered_providers(self) -> List[tuple[str, Dict[str, Any]]]:
         providers = self.config.get("providers", {}) or {}
         active = self.config.get("active_provider")
@@ -233,6 +364,8 @@ class LLMClient:
         self,
         system_prompt: str,
         user_prompt: str,
+        *,
+        mask: Optional[bool] = None,
     ) -> str:
         """Generate a free-text RAG answer with the GigaChat→OpenRouter→Ollama chain.
 
@@ -245,12 +378,22 @@ class LLMClient:
           classification pipeline (DeepSeek→GigaChat) and the RAG pipeline can
           evolve independently.
 
+        BL-04 (issue #87): when ``mask`` is left ``None`` the
+        ``mask_rag_context`` flag from ``configs/embedding_config.yaml``
+        (mirrored in ``configs/llm_config.yaml``) is consulted; defaults to
+        ``True``. Pass ``mask=False`` only in offline ``evaluate_rag.py``
+        runs with synthetic data.
+
         Errors from each provider (HTTP 4xx/5xx, SSL, timeouts, refused
         connections) are logged at ``WARNING`` and trigger fallback to the next
         provider. ``LLMError`` is raised only when every provider has failed.
         """
         if not user_prompt or not user_prompt.strip():
             raise ValueError("user_prompt must not be empty")
+
+        should_mask = self.mask_rag_context_enabled if mask is None else bool(mask)
+        if should_mask:
+            user_prompt = self.mask_text(user_prompt)
 
         providers = self.config.get("providers", {}) or {}
         rag_callers: Dict[str, RagProviderCall] = {
@@ -264,7 +407,7 @@ class LLMClient:
             caller = rag_callers.get(name)
             if caller is None:
                 continue
-            provider_cfg = providers.get(name) or {}
+            provider_cfg = self._merge_decoding(providers.get(name) or {})
             try:
                 return caller(system_prompt, user_prompt, provider_cfg)
             except Exception as exc:  # noqa: BLE001 - fall through to next provider
@@ -298,6 +441,13 @@ class LLMClient:
         if not req_text or not req_text.strip():
             raise ValueError("Requirement text must not be empty")
 
+        # BL-03: STRICT_MODE — refuse to call the LLM when retrieval is empty
+        # or every chunk scored below `strict_min_score`. This blocks the
+        # CONCEPT §7 R-01 hallucination path.
+        strict_reason = self._strict_mode_blocks_call(context_chunks)
+        if strict_reason is not None:
+            return self._strict_mode_result(strict_reason, requirement_id)
+
         masked_req = self.mask_text(req_text)
         masked_chunks = mask_context_chunks(
             list(context_chunks), config_path=self.masking_config_path
@@ -309,12 +459,24 @@ class LLMClient:
         context_block = self._format_context(masked_chunks)
         user_message = self._build_user_message(masked_req, context_block, requirement_id)
 
+        # BL-22: audit-trail of the locked decoding parameters (FR-08). Only
+        # emitted when a `decoding:` block is present; legacy configs stay
+        # silent so existing tests keep their previous log surface.
+        decoding_params = self._decoding_params()
+        if decoding_params:
+            logger.info(
+                "decoding_lock applied: %s",
+                {k: decoding_params[k] for k in DECODING_PARAM_KEYS if k in decoding_params},
+                extra={"requirement_id": requirement_id} if requirement_id else None,
+            )
+
         last_error: Optional[Exception] = None
         for provider_name, provider_cfg in self._ordered_providers():
             caller = self.provider_callers.get(provider_name)
             if caller is None:
                 logger.warning("No caller registered for provider %s; skipping.", provider_name)
                 continue
+            provider_cfg = self._merge_decoding(provider_cfg)
             retries = max(1, int(provider_cfg.get("retry_attempts", DEFAULT_RETRY_ATTEMPTS)))
             for attempt in range(1, retries + 1):
                 try:
@@ -397,22 +559,42 @@ def _call_stub(system_prompt: str, user_message: str, config: Dict[str, Any]) ->
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _decoding_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Pick up decoding params (top_p / seed / max_tokens) from ``config``.
+
+    BL-22: ``temperature`` is forwarded separately by every caller, but the
+    remaining locked parameters are optional in the wire payload — we only
+    include them when present so legacy provider configs (which never set
+    them) keep their previous request shape.
+    """
+    overrides: Dict[str, Any] = {}
+    if "top_p" in config and config["top_p"] is not None:
+        overrides["top_p"] = float(config["top_p"])
+    if "seed" in config and config["seed"] is not None:
+        overrides["seed"] = int(config["seed"])
+    if "max_tokens" in config and config["max_tokens"] is not None:
+        overrides["max_tokens"] = int(config["max_tokens"])
+    return overrides
+
+
 def _call_deepseek(system_prompt: str, user_message: str, config: Dict[str, Any]) -> str:
     api_key = _resolve_env(config.get("api_key_env"))
     if not api_key:
         raise RuntimeError("DeepSeek API key is not configured")
+    payload: Dict[str, Any] = {
+        "model": config.get("model", "deepseek-chat"),
+        "temperature": config.get("temperature", 0.1),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    payload.update(_decoding_overrides(config))
     data = _http_post_with_retries(
         "https://api.deepseek.com/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json_payload={
-            "model": config.get("model", "deepseek-chat"),
-            "temperature": config.get("temperature", 0.1),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "response_format": {"type": "json_object"},
-        },
+        json_payload=payload,
     )
     return data["choices"][0]["message"]["content"]
 
@@ -446,17 +628,19 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
     token_resp.raise_for_status()
     access_token = token_resp.json()["access_token"]
 
+    payload: Dict[str, Any] = {
+        "model": config.get("model", "GigaChat-Pro"),
+        "temperature": config.get("temperature", 0.1),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    payload.update(_decoding_overrides(config))
     data = _http_post_with_retries(
         "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-        json_payload={
-            "model": config.get("model", "GigaChat-Pro"),
-            "temperature": config.get("temperature", 0.1),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-        },
+        json_payload=payload,
     )
     return data["choices"][0]["message"]["content"]
 
@@ -543,6 +727,15 @@ def _call_gigachat_rag(system_prompt: str, user_message: str, config: Dict[str, 
 
     access_token = _gigachat_access_token(config)
     verify_ssl = bool(config.get("verify_ssl", True))
+    body: Dict[str, Any] = {
+        "model": config.get("model", "GigaChat-Pro"),
+        "temperature": float(config.get("temperature", 0.1)),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    body.update(_decoding_overrides(config))
     try:
         response = requests.post(
             "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
@@ -550,14 +743,7 @@ def _call_gigachat_rag(system_prompt: str, user_message: str, config: Dict[str, 
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": config.get("model", "GigaChat-Pro"),
-                "temperature": float(config.get("temperature", 0.1)),
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-            },
+            json=body,
             timeout=HTTP_TIMEOUT_SECONDS,
             verify=verify_ssl,
         )
@@ -608,18 +794,20 @@ def _call_openrouter_rag(system_prompt: str, user_message: str, config: Dict[str
         headers["X-Title"] = str(title)
 
     base_url = str(config.get("base_url", "https://openrouter.ai/api/v1")).rstrip("/")
+    body: Dict[str, Any] = {
+        "model": config.get("model", DEFAULT_OPENROUTER_MODEL),
+        "temperature": float(config.get("temperature", 0.1)),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    body.update(_decoding_overrides(config))
     try:
         response = requests.post(
             f"{base_url}/chat/completions",
             headers=headers,
-            json={
-                "model": config.get("model", DEFAULT_OPENROUTER_MODEL),
-                "temperature": float(config.get("temperature", 0.1)),
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-            },
+            json=body,
             timeout=HTTP_TIMEOUT_SECONDS,
         )
     except requests.exceptions.SSLError as exc:
@@ -659,18 +847,20 @@ def _call_ollama_rag(system_prompt: str, user_message: str, config: Dict[str, An
     model = str(
         config.get("model") or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
     )
+    body: Dict[str, Any] = {
+        "model": model,
+        "temperature": float(config.get("temperature", 0.1)),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    body.update(_decoding_overrides(config))
     try:
         response = requests.post(
             f"{base_url}/v1/chat/completions",
             headers={"Content-Type": "application/json"},
-            json={
-                "model": model,
-                "temperature": float(config.get("temperature", 0.1)),
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-            },
+            json=body,
             timeout=HTTP_TIMEOUT_SECONDS,
         )
     except requests.exceptions.ConnectionError as exc:
