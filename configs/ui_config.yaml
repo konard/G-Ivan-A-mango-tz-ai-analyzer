@@ -1,0 +1,4 @@
+citations:
+  base_url: "http://localhost:8000/docs"
+  # base_url: "https://kb.mango-office.ru/docs"
+  source_dir: "knowledge_base/sources"
