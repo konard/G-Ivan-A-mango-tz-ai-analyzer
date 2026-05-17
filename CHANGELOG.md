@@ -10,6 +10,15 @@
 - **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
 
 ### Added
+- **MINOR: audit trail with run_id tracing & BL-04 compliance (BL-23, issue #103).**
+  `src/llm/client.py` creates a 12-hex per-request `run_id` for
+  `classify_requirement()` and `generate_rag_response()`, preserves it through
+  provider fallback via provider config, and emits masked structured
+  `LLM_REQUEST` / `LLM_RESPONSE` records with provider, decoding params,
+  prompt version/hash, response status, and latency. Logger failures are
+  best-effort and do not interrupt the main LLM request. ADR:
+  [`docs/ADR/005-audit-trail.md`](docs/ADR/005-audit-trail.md); tests:
+  `tests/test_audit_trail.py`.
 - **MINOR: evaluation script for RAG metrics (BL-05, issue #105).**
   `scripts/evaluate/evaluate_rag.py` reads the Golden Set from
   `data/golden_set_v1.jsonl`, loads retrieval settings from

@@ -112,6 +112,7 @@ def test_load_prompt_emits_log_with_run_id(
     assert getattr(record, "run_id", None) == "run-123"
     assert getattr(record, "prompt_name", None) == "gamma"
     assert getattr(record, "prompt_version", None) == "v1.0"
+    assert getattr(record, "prompt_hash", None) == info.sha256
     assert getattr(record, "prompt_sha256", None) == info.sha256
 
 
@@ -128,6 +129,7 @@ def test_load_prompt_logs_without_run_id_supplied(
     record = next(r for r in caplog.records if r.name == "src.llm.prompt_loader")
     assert getattr(record, "prompt_name", None) == "delta"
     assert getattr(record, "prompt_version", None) == "v1.0"
+    assert getattr(record, "prompt_hash", None)
     assert getattr(record, "prompt_sha256", None)
 
 

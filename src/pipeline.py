@@ -36,6 +36,10 @@ from src.rag.retriever import HybridRetriever, build_retriever
 
 logger = logging.getLogger(__name__)
 
+_RESERVED_LOG_RECORD_ATTRS = set(
+    logging.LogRecord("", 0, "", 0, "", (), None).__dict__
+) | {"message", "asctime"}
+
 
 class _JsonFormatter(logging.Formatter):
     """Minimal JSON log formatter that includes ``run_id`` and ``requirement_id``.
@@ -63,6 +67,10 @@ class _JsonFormatter(logging.Formatter):
         requirement_id = getattr(record, "requirement_id", None)
         if requirement_id is not None:
             entry["requirement_id"] = requirement_id
+        for key, value in record.__dict__.items():
+            if key in _RESERVED_LOG_RECORD_ATTRS or key in entry:
+                continue
+            entry[key] = value
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)
         sanitized = sanitize_log_record(entry, config_path=self._masking_config_path)

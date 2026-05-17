@@ -10,6 +10,7 @@ Provider-level overrides for the four locked keys (``temperature``,
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -111,6 +112,7 @@ def test_decoding_block_absent_keeps_legacy_provider_cfg() -> None:
         context_chunks=[{"text": "rel", "source": "a.md", "score": 0.5}],
     )
 
+    assert re.fullmatch(r"[0-9a-f]{12}", captured.pop("run_id"))
     assert captured == {"priority": 1, "retry_attempts": 1, "model": "demo"}
 
 

@@ -102,7 +102,12 @@ def _emit_load_log(
     path: Path,
     run_id: Optional[str],
 ) -> None:
-    extra: Dict[str, Any] = {"prompt_name": name, "prompt_version": version, "prompt_sha256": sha256}
+    extra: Dict[str, Any] = {
+        "prompt_name": name,
+        "prompt_version": version,
+        "prompt_hash": sha256,
+        "prompt_sha256": sha256,
+    }
     if run_id:
         extra["run_id"] = run_id
     logger.info(

@@ -26,15 +26,21 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import yaml
 
-from src.llm.masking import mask_text, mask_context_chunks  # noqa: F401 - re-export
+from src.llm.masking import (  # noqa: F401 - re-export
+    mask_context_chunks,
+    mask_text,
+    sanitize_log_record,
+)
 from src.llm.prompt_loader import (
     PromptNotFoundError,
+    compute_sha256,
     load_prompt_from_path,
 )
 from src.llm.validator import extract_json, validate_payload  # noqa: F401 - re-export
@@ -48,6 +54,7 @@ DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
 HTTP_TIMEOUT_SECONDS = 30
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+LLM_RUN_ID_LENGTH = 12
 
 # --- BL-22: temperature lock (issue #87) --------------------------------------
 # Centralised decoding parameters enforced on every provider call. Per-prompt
@@ -77,6 +84,65 @@ DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 # Fixed exponential backoff schedule (seconds), per issue #45 MUST 3.
 # index = attempt - 1; clipped to last value if more attempts are configured.
 BACKOFF_SCHEDULE_SECONDS: tuple[int, ...] = (5, 15, 45)
+
+_AUDIT_FIELD_ORDER: tuple[str, ...] = (
+    "run_id",
+    "request_type",
+    "provider",
+    "attempt",
+    "status",
+    "latency_ms",
+    "requirement_id",
+    "classification",
+    "prompt_name",
+    "prompt_version",
+    "prompt_hash",
+    "decoding_params",
+    "user_prompt",
+    "response",
+    "error",
+)
+
+
+def _new_llm_run_id() -> str:
+    """Return a short per-LLM-call trace id (12 hex chars, BL-23)."""
+    return uuid.uuid4().hex[:LLM_RUN_ID_LENGTH]
+
+
+def _safe_logger_info(message: str, *args: Any, **kwargs: Any) -> None:
+    """Best-effort info logging; logging failures must not break LLM calls."""
+    try:
+        logger.info(message, *args, **kwargs)
+    except Exception:  # noqa: BLE001 - audit logging must never break the request
+        return
+
+
+def _safe_logger_warning(message: str, *args: Any, **kwargs: Any) -> None:
+    """Best-effort warning logging; used on non-critical audit paths."""
+    try:
+        logger.warning(message, *args, **kwargs)
+    except Exception:  # noqa: BLE001 - logging failures must not mask root cause
+        return
+
+
+def _format_audit_value(value: Any) -> str:
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return str(value)
+
+
+def _format_audit_message(event: str, fields: Dict[str, Any]) -> str:
+    """Render an audit event as parseable key=value text."""
+    ordered_keys = [key for key in _AUDIT_FIELD_ORDER if key in fields]
+    ordered_keys.extend(
+        sorted(key for key in fields if key not in set(ordered_keys) | {"event"})
+    )
+    parts = [event]
+    for key in ordered_keys:
+        parts.append(f"{key}={_format_audit_value(fields[key])}")
+    return " ".join(parts)
 
 
 def _backoff_delay(attempt: int) -> int:
@@ -198,7 +264,9 @@ class LLMClient:
         self.config = llm_config or {}
         self.embedding_config = embedding_config or {}
         self.masking_config_path = masking_config_path
-        self.system_prompt = self._load_system_prompt(prompt_path)
+        self.system_prompt, self.system_prompt_audit = (
+            self._load_system_prompt_with_metadata(prompt_path)
+        )
         self.provider_callers: Dict[str, ProviderCall] = {
             "deepseek": _call_deepseek,
             "gigachat": _call_gigachat,
@@ -225,8 +293,8 @@ class LLMClient:
         )
 
     @staticmethod
-    def _load_system_prompt(prompt_path: str) -> str:
-        """Load the classifier system prompt via the prompt library (BL-08).
+    def _load_system_prompt_with_metadata(prompt_path: str) -> tuple[str, Dict[str, str]]:
+        """Load the classifier system prompt and retain audit metadata (BL-08).
 
         Delegates to :func:`src.llm.prompt_loader.load_prompt_from_path` so the
         SHA-256 of the loaded prompt is recorded in the audit log together
@@ -235,16 +303,34 @@ class LLMClient:
         absent — it is **not** an editing surface.
         """
         try:
-            return load_prompt_from_path(prompt_path).content
+            prompt = load_prompt_from_path(prompt_path)
+            return prompt.content, {
+                "prompt_name": prompt.name,
+                "prompt_version": prompt.version,
+                "prompt_hash": prompt.sha256,
+                "prompt_sha256": prompt.sha256,
+            }
         except PromptNotFoundError:
-            logger.warning(
+            _safe_logger_warning(
                 "System prompt not found at %s; using minimal fallback.", prompt_path
             )
-            return (
+            fallback = (
                 "You are a classifier. Respond ONLY with JSON containing keys: "
                 "requirement_id, requirement_text, classification (Да|Частично|Нет|НД), "
                 "confidence, reasoning, citations, requires_ba_review, recommendations."
             )
+            prompt_hash = compute_sha256(fallback)
+            return fallback, {
+                "prompt_name": Path(prompt_path).stem or "system_classifier",
+                "prompt_version": "fallback",
+                "prompt_hash": prompt_hash,
+                "prompt_sha256": prompt_hash,
+            }
+
+    @staticmethod
+    def _load_system_prompt(prompt_path: str) -> str:
+        """Backward-compatible prompt loader returning only prompt content."""
+        return LLMClient._load_system_prompt_with_metadata(prompt_path)[0]
 
     def mask_text(self, text: str) -> str:
         return mask_text(text, config_path=self.masking_config_path)
@@ -285,8 +371,8 @@ class LLMClient:
         """BL-22: return decoding params only when the ``decoding:`` block is set.
 
         Returning an empty dict when the block is absent keeps the legacy
-        ``test_generate_rag_response_passes_provider_config`` assertion intact
-        (it compares the captured cfg by exact equality).
+        decoding behaviour intact; the BL-23 audit ``run_id`` is attached
+        separately to provider configs.
         """
         decoding = self.config.get("decoding")
         if not isinstance(decoding, dict):
@@ -341,13 +427,16 @@ class LLMClient:
         return None
 
     def _strict_mode_result(
-        self, reason: str, requirement_id: Optional[str]
+        self, reason: str, requirement_id: Optional[str], run_id: str
     ) -> "ClassificationResult":
         """Deterministic ``НД`` fallback used when STRICT_MODE blocks the call."""
-        logger.info(
+        _safe_logger_info(
             "strict_mode=true skipped LLM call: %s",
             reason,
-            extra={"requirement_id": requirement_id} if requirement_id else None,
+            extra={
+                "run_id": run_id,
+                **({"requirement_id": requirement_id} if requirement_id else {}),
+            },
         )
         return ClassificationResult(
             classification="НД",
@@ -373,6 +462,61 @@ class LLMClient:
             if name in providers:
                 result.append((name, providers[name]))
         return result
+
+    @staticmethod
+    def _effective_decoding_params(provider_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Return decoding keys that will be visible to a provider call."""
+        return {
+            key: provider_cfg[key]
+            for key in DECODING_PARAM_KEYS
+            if key in provider_cfg and provider_cfg[key] is not None
+        }
+
+    def _provider_config_for_run(
+        self,
+        provider_cfg: Dict[str, Any],
+        run_id: str,
+    ) -> Dict[str, Any]:
+        """Merge decoding params and attach the per-request ``run_id``."""
+        merged = dict(self._merge_decoding(provider_cfg))
+        merged["run_id"] = run_id
+        return merged
+
+    def _classifier_prompt_audit_fields(self) -> Dict[str, str]:
+        return {
+            "prompt_name": self.system_prompt_audit["prompt_name"],
+            "prompt_version": self.system_prompt_audit["prompt_version"],
+            "prompt_hash": self.system_prompt_audit["prompt_hash"],
+            "prompt_sha256": self.system_prompt_audit["prompt_sha256"],
+        }
+
+    @staticmethod
+    def _runtime_prompt_audit_fields(system_prompt: str) -> Dict[str, str]:
+        prompt_hash = compute_sha256(system_prompt)
+        return {
+            "prompt_name": "runtime_system_prompt",
+            "prompt_version": "unknown",
+            "prompt_hash": prompt_hash,
+            "prompt_sha256": prompt_hash,
+        }
+
+    def _safe_audit_log(self, event: str, **fields: Any) -> None:
+        """Emit a masked structured audit log without risking request failure."""
+        try:
+            event_record = {"event": event, **fields}
+            sanitized = sanitize_log_record(
+                event_record,
+                config_path=self.masking_config_path,
+            )
+            message = _format_audit_message(event, sanitized)
+            extra = {
+                key: value
+                for key, value in sanitized.items()
+                if key not in {"message"}
+            }
+            _safe_logger_info(message, extra=extra)
+        except Exception:  # noqa: BLE001 - audit logging is best-effort
+            return
 
     def generate_rag_response(
         self,
@@ -405,6 +549,7 @@ class LLMClient:
         if not user_prompt or not user_prompt.strip():
             raise ValueError("user_prompt must not be empty")
 
+        run_id = _new_llm_run_id()
         should_mask = self.mask_rag_context_enabled if mask is None else bool(mask)
         if should_mask:
             user_prompt = self.mask_text(user_prompt)
@@ -417,16 +562,53 @@ class LLMClient:
         }
 
         last_error: Optional[Exception] = None
+        prompt_fields = self._runtime_prompt_audit_fields(system_prompt)
         for name in RAG_FALLBACK_CHAIN:
             caller = rag_callers.get(name)
             if caller is None:
                 continue
-            provider_cfg = self._merge_decoding(providers.get(name) or {})
+            provider_cfg = self._provider_config_for_run(providers.get(name) or {}, run_id)
+            decoding_params = self._effective_decoding_params(provider_cfg)
+            self._safe_audit_log(
+                "LLM_REQUEST",
+                run_id=run_id,
+                request_type="rag",
+                provider=name,
+                attempt=1,
+                user_prompt=user_prompt,
+                decoding_params=decoding_params,
+                **prompt_fields,
+            )
+            started = time.perf_counter()
             try:
-                return caller(system_prompt, user_prompt, provider_cfg)
+                answer = caller(system_prompt, user_prompt, provider_cfg)
+                self._safe_audit_log(
+                    "LLM_RESPONSE",
+                    run_id=run_id,
+                    request_type="rag",
+                    provider=name,
+                    attempt=1,
+                    status="success",
+                    latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                    response=answer,
+                    response_chars=len(answer),
+                    **prompt_fields,
+                )
+                return answer
             except Exception as exc:  # noqa: BLE001 - fall through to next provider
                 last_error = exc
-                logger.warning(
+                self._safe_audit_log(
+                    "LLM_RESPONSE",
+                    run_id=run_id,
+                    request_type="rag",
+                    provider=name,
+                    attempt=1,
+                    status="error",
+                    latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                    error=str(exc),
+                    **prompt_fields,
+                )
+                _safe_logger_warning(
                     "RAG provider %s failed (%s); trying next provider.",
                     name,
                     exc,
@@ -455,12 +637,13 @@ class LLMClient:
         if not req_text or not req_text.strip():
             raise ValueError("Requirement text must not be empty")
 
+        run_id = _new_llm_run_id()
         # BL-03: STRICT_MODE — refuse to call the LLM when retrieval is empty
         # or every chunk scored below `strict_min_score`. This blocks the
         # CONCEPT §7 R-01 hallucination path.
         strict_reason = self._strict_mode_blocks_call(context_chunks)
         if strict_reason is not None:
-            return self._strict_mode_result(strict_reason, requirement_id)
+            return self._strict_mode_result(strict_reason, requirement_id, run_id)
 
         masked_req = self.mask_text(req_text)
         masked_chunks = mask_context_chunks(
@@ -478,25 +661,60 @@ class LLMClient:
         # silent so existing tests keep their previous log surface.
         decoding_params = self._decoding_params()
         if decoding_params:
-            logger.info(
+            log_extra: Dict[str, Any] = {"run_id": run_id}
+            if requirement_id:
+                log_extra["requirement_id"] = requirement_id
+            _safe_logger_info(
                 "decoding_lock applied: %s",
                 {k: decoding_params[k] for k in DECODING_PARAM_KEYS if k in decoding_params},
-                extra={"requirement_id": requirement_id} if requirement_id else None,
+                extra=log_extra,
             )
 
         last_error: Optional[Exception] = None
+        prompt_fields = self._classifier_prompt_audit_fields()
         for provider_name, provider_cfg in self._ordered_providers():
             caller = self.provider_callers.get(provider_name)
             if caller is None:
-                logger.warning("No caller registered for provider %s; skipping.", provider_name)
+                _safe_logger_warning(
+                    "No caller registered for provider %s; skipping.", provider_name
+                )
                 continue
-            provider_cfg = self._merge_decoding(provider_cfg)
+            provider_cfg = self._provider_config_for_run(provider_cfg, run_id)
             retries = max(1, int(provider_cfg.get("retry_attempts", DEFAULT_RETRY_ATTEMPTS)))
             for attempt in range(1, retries + 1):
+                effective_decoding = self._effective_decoding_params(provider_cfg)
+                self._safe_audit_log(
+                    "LLM_REQUEST",
+                    run_id=run_id,
+                    request_type="classification",
+                    provider=provider_name,
+                    attempt=attempt,
+                    requirement_id=requirement_id,
+                    user_prompt=user_message,
+                    decoding_params=effective_decoding,
+                    **prompt_fields,
+                )
+                started = time.perf_counter()
+                raw_response: Optional[str] = None
                 try:
                     raw_response = caller(self.system_prompt, user_message, provider_cfg)
                     payload = extract_json(raw_response)
                     payload = validate_payload(payload)
+                    self._safe_audit_log(
+                        "LLM_RESPONSE",
+                        run_id=run_id,
+                        request_type="classification",
+                        provider=provider_name,
+                        attempt=attempt,
+                        requirement_id=requirement_id,
+                        status="success",
+                        latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                        response=raw_response,
+                        response_chars=len(raw_response),
+                        classification=payload["classification"],
+                        confidence=payload.get("confidence", 0.0),
+                        **prompt_fields,
+                    )
                     return ClassificationResult(
                         classification=payload["classification"],
                         reasoning=payload["reasoning"],
@@ -509,7 +727,20 @@ class LLMClient:
                     )
                 except RetriableProviderError as exc:
                     last_error = exc
-                    logger.warning(
+                    self._safe_audit_log(
+                        "LLM_RESPONSE",
+                        run_id=run_id,
+                        request_type="classification",
+                        provider=provider_name,
+                        attempt=attempt,
+                        requirement_id=requirement_id,
+                        status="error",
+                        latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                        error=str(exc),
+                        response=raw_response,
+                        **prompt_fields,
+                    )
+                    _safe_logger_warning(
                         "Retriable failure on provider %s (attempt %d/%d): %s",
                         provider_name,
                         attempt,
@@ -522,7 +753,20 @@ class LLMClient:
                     break  # exhaust retries → move to next provider
                 except Exception as exc:  # noqa: BLE001 - try the next provider
                     last_error = exc
-                    logger.warning(
+                    self._safe_audit_log(
+                        "LLM_RESPONSE",
+                        run_id=run_id,
+                        request_type="classification",
+                        provider=provider_name,
+                        attempt=attempt,
+                        requirement_id=requirement_id,
+                        status="error",
+                        latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                        error=str(exc),
+                        response=raw_response,
+                        **prompt_fields,
+                    )
+                    _safe_logger_warning(
                         "Non-retriable failure on provider %s: %s (skipping retries)",
                         provider_name,
                         exc,
