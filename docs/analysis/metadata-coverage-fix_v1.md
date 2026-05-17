@@ -139,7 +139,7 @@ Document fallback:
 - `tests/test_citation_links.py` covers UI citation labels with fallback
   section signatures.
 - Full reindex completed and persisted `6,934` chunks to ChromaDB.
-- `python -m pytest tests/ -q` → `221 passed`.
+- `python -m pytest tests/ -q` → `227 passed`.
 - `python scripts/evaluate/evaluate_rag.py --retriever stub --subset smoke` →
   Hit Rate@5 `1.000`, MRR `1.000`, Context Recall `1.000` on 5 smoke items.
 
