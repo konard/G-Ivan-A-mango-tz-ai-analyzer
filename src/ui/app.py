@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -542,6 +543,7 @@ def main() -> None:
 
 def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
     """Stateless TZ-analysis path — no history, identical to pre-BL-07 UX."""
+    _render_analysis_export_button()
     query = st.text_area(
         "Your query",
         height=140,
@@ -571,7 +573,11 @@ def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
 
     st.subheader("LLM Response")
     rendered_answer = linkify_citations(answer or "", chunks)
+    st.session_state["analysis_export_rows"] = [
+        _build_analysis_export_row(query, rendered_answer, chunks)
+    ]
     st.markdown(rendered_answer or "_(empty response)_")
+    _render_analysis_export_button()
 
     if settings["debug"]:
         with st.expander("Prompt sent to LLM", expanded=False):
@@ -591,6 +597,7 @@ def _run_consultation_mode(
         f"{max_history_messages} сообщений. Используйте "
         "**🧹 Очистить историю** в сайдбаре, чтобы начать диалог заново."
     )
+    _render_chat_export_button()
 
     for msg in st.session_state.get("messages", []):
         with st.chat_message(msg.get("role", "user")):
@@ -636,6 +643,62 @@ def _run_consultation_mode(
     messages.append({"role": "user", "content": query})
     messages.append({"role": "assistant", "content": rendered_answer or ""})
     st.session_state["messages"] = trim_history(messages, max_history_messages)
+    _render_chat_export_button()
+
+
+def _build_analysis_export_row(
+    query: str,
+    answer: str,
+    chunks: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    citations = []
+    for chunk in chunks:
+        source = str(chunk.get("source") or "").strip()
+        if source and source not in citations:
+            citations.append(source)
+    return {
+        "requirement_id": "ui-query-1",
+        "requirement_text": query,
+        "classification": "",
+        "reasoning": answer,
+        "citations": "; ".join(citations),
+    }
+
+
+def _render_analysis_export_button() -> None:
+    rows = st.session_state.get("analysis_export_rows", [])
+    disabled = not bool(rows)
+    if rows:
+        from src.utils.export import export_to_excel
+
+        data = export_to_excel(rows)
+    else:
+        data = BytesIO()
+    st.download_button(
+        "📥 Скачать отчет (.xlsx)",
+        data=data,
+        file_name="clarify-analysis-report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        disabled=disabled,
+    )
+
+
+def _render_chat_export_button() -> None:
+    history = st.session_state.get("messages", [])
+    disabled = not bool(history)
+    if history:
+        from src.utils.export import export_chat_to_markdown
+
+        data = export_chat_to_markdown(history)
+    else:
+        data = BytesIO()
+    st.download_button(
+        "📥 Сохранить диалог (.md)",
+        data=data,
+        file_name="clarify-consultation-dialog.md",
+        mime="text/markdown; charset=utf-8",
+        disabled=disabled,
+    )
 
 
 def _retrieve_and_answer(

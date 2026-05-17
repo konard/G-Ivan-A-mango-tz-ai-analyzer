@@ -1,0 +1,7 @@
+export:
+  excel_columns:
+    - "requirement_id"
+    - "requirement_text"
+    - "classification"
+    - "reasoning"
+    - "citations"
