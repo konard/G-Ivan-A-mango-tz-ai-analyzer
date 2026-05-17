@@ -13,6 +13,7 @@ orchestration logic without making real HTTP calls.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -154,6 +155,7 @@ def test_generate_rag_response_passes_provider_config(monkeypatch) -> None:
         }
     )
     client.generate_rag_response("sys", "user")
+    assert re.fullmatch(r"[0-9a-f]{12}", captured.pop("run_id"))
     assert captured == {"model": "GigaChat-Pro", "temperature": 0.2}
 
 

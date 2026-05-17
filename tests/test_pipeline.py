@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -88,9 +89,14 @@ def test_run_analysis_propagates_run_id_to_logs_stats_and_export(
     """RunID must flow end-to-end: pipeline → JSON logs → ``PipelineStats.run_id``
     → ``[RunID]`` Excel column.
 
-    Verifies the audit-trail criterion of issue #48: every JSON-log line and
-    every row of the export carry the same UUID.
+    Verifies the audit-trail criterion of issue #48: pipeline-level JSON log
+    lines and every row of the export carry the same UUID. LLM audit records
+    use a per-request 12-hex run_id per BL-23 / issue #103.
     """
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.filters.clear()
+
     input_file = tmp_path / "tz.xlsx"
     pd.DataFrame(
         {"Требование": ["Поддержка интеграции с Битрикс24", "Запись звонков"]}
@@ -126,8 +132,12 @@ def test_run_analysis_propagates_run_id_to_logs_stats_and_export(
     assert "src.parsers.excel_parser" in loggers_seen, (
         f"excel_parser logs missing from {loggers_seen}"
     )
+    llm_events = {"LLM_REQUEST", "LLM_RESPONSE"}
     for entry in parsed_lines:
-        assert entry.get("run_id") == fixed_run_id, entry
+        if entry.get("event") in llm_events:
+            assert re.fullmatch(r"[0-9a-f]{12}", entry.get("run_id", "")), entry
+        else:
+            assert entry.get("run_id") == fixed_run_id, entry
 
     # 3. Excel export contains a [RunID] column with the same value on every row.
     df = pd.read_excel(output_file)
