@@ -258,6 +258,50 @@ def test_reset_history_clears_buffer() -> None:
     assert st.session_state["messages"] == []
 
 
+# --------------------------------------------------------------- export UI --
+def test_build_analysis_export_row_uses_allowed_columns_only() -> None:
+    row = app._build_analysis_export_row(
+        "Q",
+        "A",
+        [{"source": "doc.pdf"}, {"source": "doc.pdf"}, {"source": "other.pdf"}],
+    )
+    assert row == {
+        "requirement_id": "ui-query-1",
+        "requirement_text": "Q",
+        "classification": "",
+        "reasoning": "A",
+        "citations": "doc.pdf; other.pdf",
+    }
+
+
+def test_analysis_export_button_disabled_without_rows(monkeypatch) -> None:
+    calls = []
+    st.session_state.clear()
+
+    monkeypatch.setattr(st, "download_button", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    app._render_analysis_export_button()
+
+    assert calls
+    assert calls[0][0][0] == "📥 Скачать отчет (.xlsx)"
+    assert calls[0][1]["disabled"] is True
+
+
+def test_chat_export_button_enabled_with_history(monkeypatch) -> None:
+    calls = []
+    st.session_state.clear()
+    st.session_state["messages"] = [{"role": "user", "content": "hello@example.com"}]
+
+    monkeypatch.setattr(st, "download_button", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    app._render_chat_export_button()
+
+    assert calls
+    assert calls[0][0][0] == "📥 Сохранить диалог (.md)"
+    assert calls[0][1]["disabled"] is False
+    assert b"[EMAIL]" in calls[0][1]["data"].getvalue()
+
+
 # ---------------------------------------------------------- mode constants --
 def test_mode_constants_match_issue_spec() -> None:
     """Sidebar labels must match the issue verbatim (emoji included)."""
