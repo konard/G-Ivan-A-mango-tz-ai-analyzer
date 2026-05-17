@@ -10,6 +10,17 @@
 - **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
 
 ### Added
+- **MINOR: graceful error handling & retry UX (BL-13, issue #106).**
+  KB-тестовый UI (`src/ui/app.py`) теперь обрабатывает сбои ретривера и LLM
+  без сырых traceback в интерфейсе: запрос сохраняется в
+  `st.session_state["last_query"]`, кнопка «Повторить» переиспользует это
+  значение, во время queued generation поля ввода блокируются, а ошибка
+  рендерится отдельным `st.error("Не удалось получить ответ.")` без
+  фейкового RAG-ответа. UI-логи `ui_prompt_built` /
+  `ui_generation_failed` несут `run_id`, `error_type`, `provider` и
+  изолированы `try/except`, чтобы сбой логирования не ронял Streamlit.
+  ADR — [`docs/ADR/007-error-handling.md`](docs/ADR/007-error-handling.md);
+  тесты — `tests/test_ui_error_handling.py`.
 - **MINOR: audit trail with run_id tracing & BL-04 compliance (BL-23, issue #103).**
   `src/llm/client.py` creates a 12-hex per-request `run_id` for
   `classify_requirement()` and `generate_rag_response()`, preserves it through

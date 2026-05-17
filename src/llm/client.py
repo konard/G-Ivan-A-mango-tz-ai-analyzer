@@ -160,6 +160,17 @@ def _backoff_delay(attempt: int) -> int:
 class LLMError(RuntimeError):
     """Raised when every configured provider has failed."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: Optional[str] = None,
+        last_error: Optional[BaseException] = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.last_error = last_error
+
 
 class RetriableProviderError(RuntimeError):
     """Network / rate-limit failure that should trigger a retry."""
@@ -562,6 +573,7 @@ class LLMClient:
         }
 
         last_error: Optional[Exception] = None
+        last_provider: Optional[str] = None
         prompt_fields = self._runtime_prompt_audit_fields(system_prompt)
         for name in RAG_FALLBACK_CHAIN:
             caller = rag_callers.get(name)
@@ -597,6 +609,8 @@ class LLMClient:
                 return answer
             except Exception as exc:  # noqa: BLE001 - fall through to next provider
                 last_error = exc
+                last_provider = name
+                logger.warning(
                 self._safe_audit_log(
                     "LLM_RESPONSE",
                     run_id=run_id,
@@ -617,7 +631,9 @@ class LLMClient:
 
         raise LLMError(
             "All RAG providers failed (GigaChat → OpenRouter → Ollama). "
-            f"Last error: {last_error}"
+            f"Last error: {last_error}",
+            provider=last_provider,
+            last_error=last_error,
         )
 
     def classify_requirement(
@@ -671,6 +687,7 @@ class LLMClient:
             )
 
         last_error: Optional[Exception] = None
+        last_provider: Optional[str] = None
         prompt_fields = self._classifier_prompt_audit_fields()
         for provider_name, provider_cfg in self._ordered_providers():
             caller = self.provider_callers.get(provider_name)
@@ -727,6 +744,8 @@ class LLMClient:
                     )
                 except RetriableProviderError as exc:
                     last_error = exc
+                    last_provider = provider_name
+                    logger.warning(
                     self._safe_audit_log(
                         "LLM_RESPONSE",
                         run_id=run_id,
@@ -753,6 +772,8 @@ class LLMClient:
                     break  # exhaust retries → move to next provider
                 except Exception as exc:  # noqa: BLE001 - try the next provider
                     last_error = exc
+                    last_provider = provider_name
+                    logger.warning(
                     self._safe_audit_log(
                         "LLM_RESPONSE",
                         run_id=run_id,
@@ -772,7 +793,11 @@ class LLMClient:
                         exc,
                     )
                     break
-        raise LLMError(f"All providers failed; last error: {last_error}")
+        raise LLMError(
+            f"All providers failed; last error: {last_error}",
+            provider=last_provider,
+            last_error=last_error,
+        )
 
     # ------------------------------------------------------------- formatting --
     @staticmethod

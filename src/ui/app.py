@@ -25,7 +25,8 @@ import re
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
+from uuid import uuid4
 
 import streamlit as st
 import yaml
@@ -40,11 +41,19 @@ st.set_page_config(
     layout="wide",
 )
 
+_load_dotenv_impl: Optional[Callable[..., bool]] = None
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _imported_load_dotenv
 except ImportError:  # pragma: no cover - declared in requirements.txt
-    def load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
+    pass
+else:
+    _load_dotenv_impl = _imported_load_dotenv
+
+
+def load_dotenv(*args: Any, **kwargs: Any) -> bool:
+    if _load_dotenv_impl is None:
         return False
+    return bool(_load_dotenv_impl(*args, **kwargs))
 
 
 # --------------------------------------------------------------------- paths --
@@ -81,6 +90,18 @@ PROVIDER_DISPLAY = {
     "openrouter": "OpenRouter",
     "ollama": "Ollama",
 }
+
+# BL-13 (issue #106) — graceful degradation state. The issue explicitly pins
+# ``last_query`` as the retry source, so that key remains un-namespaced.
+UI_GENERATION_ERROR_TEXT = "Не удалось получить ответ."
+RETRY_BUTTON_LABEL = "Повторить"
+SESSION_LAST_QUERY_KEY = "last_query"
+SESSION_LAST_ERROR_KEY = "last_error"
+SESSION_PROCESSING_KEY = "is_processing"
+SESSION_PENDING_QUERY_KEY = "pending_query"
+SESSION_PENDING_MODE_KEY = "pending_mode"
+SESSION_PENDING_RUN_ID_KEY = "pending_run_id"
+SESSION_LAST_ANALYSIS_RESULT_KEY = "last_analysis_result"
 
 # BL-08 (issue #94): the RAG system prompt is now a versioned artefact in
 # ``prompts/``. The Streamlit module loads it lazily inside ``main()`` so an
@@ -584,6 +605,177 @@ def _ensure_mode_state(active_mode: str) -> None:
         _reset_history()
 
 
+def _new_run_id() -> str:
+    return str(uuid4())
+
+
+def _is_mode_processing(mode: str) -> bool:
+    return bool(
+        st.session_state.get(SESSION_PROCESSING_KEY)
+        and st.session_state.get(SESSION_PENDING_MODE_KEY) == mode
+    )
+
+
+def _has_pending_generation(mode: str) -> bool:
+    return bool(
+        st.session_state.get(SESSION_PENDING_QUERY_KEY)
+        and st.session_state.get(SESSION_PENDING_MODE_KEY) == mode
+    )
+
+
+def _last_error_matches(mode: str) -> bool:
+    error = st.session_state.get(SESSION_LAST_ERROR_KEY)
+    return isinstance(error, dict) and error.get("mode") == mode
+
+
+def _queue_generation(query: str, mode: str) -> None:
+    """Queue a generation request and rerun so controls render disabled."""
+    clean_query = query.strip()
+    st.session_state[SESSION_LAST_QUERY_KEY] = clean_query
+    st.session_state[SESSION_PENDING_QUERY_KEY] = clean_query
+    st.session_state[SESSION_PENDING_MODE_KEY] = mode
+    st.session_state[SESSION_PENDING_RUN_ID_KEY] = _new_run_id()
+    st.session_state[SESSION_PROCESSING_KEY] = True
+    st.session_state.pop(SESSION_LAST_ERROR_KEY, None)
+    if mode == MODE_STATELESS:
+        st.session_state.pop(SESSION_LAST_ANALYSIS_RESULT_KEY, None)
+    st.rerun()
+
+
+def _finish_pending_generation() -> None:
+    st.session_state.pop(SESSION_PENDING_QUERY_KEY, None)
+    st.session_state.pop(SESSION_PENDING_MODE_KEY, None)
+    st.session_state.pop(SESSION_PENDING_RUN_ID_KEY, None)
+    st.session_state[SESSION_PROCESSING_KEY] = False
+
+
+def _render_retry_notice(mode: str) -> bool:
+    """Render the current retryable error block for ``mode``.
+
+    Returns ``True`` only when the retry button was clicked. In real Streamlit
+    that path immediately calls ``st.rerun()`` via :func:`_queue_generation`.
+    """
+    error = st.session_state.get(SESSION_LAST_ERROR_KEY)
+    if not isinstance(error, dict) or error.get("mode") != mode:
+        return False
+
+    st.error(str(error.get("message") or UI_GENERATION_ERROR_TEXT))
+    clicked = st.button(
+        RETRY_BUTTON_LABEL,
+        key=f"retry_{mode}",
+        disabled=_is_mode_processing(mode),
+    )
+    if not clicked:
+        return False
+
+    query = str(st.session_state.get(SESSION_LAST_QUERY_KEY) or "").strip()
+    if not query:
+        st.warning("Нет сохранённого запроса для повторной попытки.")
+        return False
+    _queue_generation(query, mode)
+    return True
+
+
+def _generation_error_types() -> tuple[type[BaseException], ...]:
+    from src.llm.client import LLMError, RetriableProviderError
+
+    types: List[type[BaseException]] = [
+        KBError,
+        LLMError,
+        RetriableProviderError,
+        TimeoutError,
+        ConnectionError,
+    ]
+    try:
+        import requests  # type: ignore
+
+        types.extend(
+            [
+                requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+            ]
+        )
+    except ImportError:
+        pass
+    return tuple(types)
+
+
+def _provider_for_exception(exc: BaseException) -> str:
+    provider = getattr(exc, "provider", None)
+    if provider:
+        return str(provider)
+    if isinstance(exc, KBError):
+        return "knowledge_base"
+    return "rag_fallback_chain"
+
+
+def _safe_log_ui_error(
+    *,
+    run_id: str,
+    mode: str,
+    provider: str,
+    exc: BaseException,
+) -> None:
+    """Log UI failures without allowing logging failures to break the UI."""
+    try:
+        logger.error(
+            "ui_generation_failed",
+            extra={
+                "run_id": run_id,
+                "error_type": type(exc).__name__,
+                "provider": provider,
+                "ui_mode": mode,
+            },
+        )
+    except Exception:  # noqa: BLE001 - logging must never break Streamlit
+        pass
+
+
+def _safe_log_prompt_built(
+    *,
+    run_id: str,
+    mode: str,
+    history_messages: int,
+    approx_tokens: int,
+) -> None:
+    try:
+        logger.info(
+            "ui_prompt_built mode=%s history_messages=%d approx_tokens=%d",
+            mode,
+            history_messages,
+            approx_tokens,
+            extra={"run_id": run_id, "ui_mode": mode},
+        )
+    except Exception:  # noqa: BLE001 - logging must never break Streamlit
+        pass
+
+
+def _store_generation_error(
+    *,
+    query: str,
+    mode: str,
+    run_id: str,
+    exc: BaseException,
+    provider: Optional[str] = None,
+) -> None:
+    provider_name = provider or _provider_for_exception(exc)
+    st.session_state[SESSION_LAST_QUERY_KEY] = query.strip()
+    st.session_state[SESSION_LAST_ERROR_KEY] = {
+        "mode": mode,
+        "message": UI_GENERATION_ERROR_TEXT,
+        "run_id": run_id,
+        "error_type": type(exc).__name__,
+        "provider": provider_name,
+    }
+    _safe_log_ui_error(
+        run_id=run_id,
+        mode=mode,
+        provider=provider_name,
+        exc=exc,
+    )
+    st.error(UI_GENERATION_ERROR_TEXT)
+
+
 # ---------------------------------------------------------------------- main --
 def main() -> None:
     load_dotenv(ENV_PATH, override=False)
@@ -605,7 +797,14 @@ def main() -> None:
             "model_name": retriever.model_name,
         }
     except KBError as exc:
-        st.error(str(exc))
+        run_id = _new_run_id()
+        st.error("Не удалось подготовить поиск по базе знаний.")
+        _safe_log_ui_error(
+            run_id=run_id,
+            mode="initialization",
+            provider="knowledge_base",
+            exc=exc,
+        )
 
     settings = render_sidebar(
         retriever_info, max_history_messages=max_history_messages
@@ -626,47 +825,91 @@ def main() -> None:
 
 def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
     """Stateless TZ-analysis path — no history, identical to pre-BL-07 UX."""
+    processing = _is_mode_processing(MODE_STATELESS)
     _render_analysis_export_button()
     query = st.text_area(
         "Your query",
         height=140,
         placeholder="Ask a question about the indexed knowledge base…",
         key="kb_query",
+        disabled=processing,
     )
-    submitted = st.button("Search KB", type="primary")
+    submitted = st.button("Search KB", type="primary", disabled=processing)
+    _render_retry_notice(MODE_STATELESS)
 
-    if not submitted:
+    if submitted:
+        if not query.strip():
+            st.warning("Please enter a query before searching.")
+            return
+        _queue_generation(query, MODE_STATELESS)
+        return
+
+    if _has_pending_generation(MODE_STATELESS):
+        _process_pending_analysis(settings)
+        return
+
+    if _render_analysis_result(settings["debug"]):
+        return
+
+    if not _last_error_matches(MODE_STATELESS):
         st.info(
             "Enter a query and click **Search KB** to retrieve chunks and an "
             "LLM-generated answer."
         )
-        return
 
-    if not query.strip():
+
+def _process_pending_analysis(settings: Dict[str, Any]) -> None:
+    query = str(st.session_state.get(SESSION_PENDING_QUERY_KEY) or "").strip()
+    run_id = str(st.session_state.get(SESSION_PENDING_RUN_ID_KEY) or _new_run_id())
+    if not query:
+        _finish_pending_generation()
         st.warning("Please enter a query before searching.")
+        st.rerun()
         return
 
     answer, chunks, prompt = _retrieve_and_answer(
         query=query,
         top_k=settings["top_k"],
         history=None,
+        mode=MODE_STATELESS,
+        run_id=run_id,
     )
-    if answer is None:
-        return
+    if answer is not None:
+        rendered_answer = linkify_citations(answer or "", chunks)
+        st.session_state[SESSION_LAST_ANALYSIS_RESULT_KEY] = {
+            "query": query,
+            "answer": rendered_answer,
+            "chunks": chunks,
+            "prompt": prompt,
+        }
+        st.session_state["analysis_export_rows"] = [
+            _build_analysis_export_row(query, rendered_answer, chunks)
+        ]
+        st.session_state.pop(SESSION_LAST_ERROR_KEY, None)
+
+    _finish_pending_generation()
+    st.rerun()
+
+
+def _render_analysis_result(debug: bool) -> bool:
+    result = st.session_state.get(SESSION_LAST_ANALYSIS_RESULT_KEY)
+    if not isinstance(result, dict):
+        return False
+
+    chunks = result.get("chunks") or []
+    prompt = str(result.get("prompt") or "")
+    rendered_answer = str(result.get("answer") or "")
 
     st.subheader("LLM Response")
-    rendered_answer = linkify_citations(answer or "", chunks)
-    st.session_state["analysis_export_rows"] = [
-        _build_analysis_export_row(query, rendered_answer, chunks)
-    ]
     st.markdown(rendered_answer or "_(empty response)_")
     _render_analysis_export_button()
 
-    if settings["debug"]:
+    if debug and prompt:
         with st.expander("Prompt sent to LLM", expanded=False):
             st.code(prompt, language="markdown")
 
-    render_chunks(chunks, settings["debug"])
+    render_chunks(chunks, debug)
+    return True
 
 
 def _run_consultation_mode(
@@ -675,6 +918,7 @@ def _run_consultation_mode(
     max_history_messages: int,
 ) -> None:
     """Stateful chat path — keeps ≤ ``max_history_messages`` recent turns."""
+    processing = _is_mode_processing(MODE_CONSULTATION)
     st.caption(
         "Режим консультации: ассистент помнит последние "
         f"{max_history_messages} сообщений. Используйте "
@@ -682,20 +926,74 @@ def _run_consultation_mode(
     )
     _render_chat_export_button()
 
-    for msg in st.session_state.get("messages", []):
+    messages = list(st.session_state.get("messages", []))
+    latest_assistant_idx = _latest_assistant_message_index(messages)
+    for idx, msg in enumerate(messages):
         with st.chat_message(msg.get("role", "user")):
             st.markdown(msg.get("content", ""))
+            if (
+                settings["debug"]
+                and idx == latest_assistant_idx
+                and str(msg.get("role", "")).lower() == "assistant"
+            ):
+                prompt = str(msg.get("prompt") or "")
+                chunks = msg.get("chunks") or []
+                if prompt:
+                    with st.expander("Prompt sent to LLM", expanded=False):
+                        st.code(prompt, language="markdown")
+                if chunks:
+                    render_chunks(chunks, settings["debug"])
 
-    query = st.chat_input("Задайте вопрос по документации…")
-    if not query:
-        if not st.session_state.get("messages"):
-            st.info(
-                "Введите вопрос ниже, чтобы начать консультацию по базе знаний."
-            )
+    _render_retry_notice(MODE_CONSULTATION)
+
+    query = st.chat_input(
+        "Задайте вопрос по документации…",
+        disabled=processing,
+    )
+    if query and not processing:
+        _queue_generation(query, MODE_CONSULTATION)
         return
 
-    with st.chat_message("user"):
-        st.markdown(query)
+    if _has_pending_generation(MODE_CONSULTATION):
+        pending_query = str(
+            st.session_state.get(SESSION_PENDING_QUERY_KEY) or ""
+        ).strip()
+        if pending_query:
+            with st.chat_message("user"):
+                st.markdown(pending_query)
+        _process_pending_consultation(
+            settings=settings,
+            max_history_messages=max_history_messages,
+        )
+        return
+
+    if (
+        not query
+        and not st.session_state.get("messages")
+        and not _last_error_matches(MODE_CONSULTATION)
+    ):
+        st.info("Введите вопрос ниже, чтобы начать консультацию по базе знаний.")
+
+
+def _latest_assistant_message_index(messages: Sequence[Dict[str, Any]]) -> Optional[int]:
+    for idx in range(len(messages) - 1, -1, -1):
+        if str(messages[idx].get("role", "")).lower() == "assistant":
+            return idx
+    return None
+
+
+def _process_pending_consultation(
+    *,
+    settings: Dict[str, Any],
+    max_history_messages: int,
+) -> None:
+    query = str(st.session_state.get(SESSION_PENDING_QUERY_KEY) or "").strip()
+    run_id = str(st.session_state.get(SESSION_PENDING_RUN_ID_KEY) or _new_run_id())
+    if not query:
+        _finish_pending_generation()
+        st.warning("Нет сохранённого запроса для повторной попытки.")
+        st.rerun()
+        return
 
     # BL-07: trim BEFORE the call so we never forward more than the configured
     # number of past turns. The fresh user message is appended *after* the
@@ -707,26 +1005,29 @@ def _run_consultation_mode(
         query=query,
         top_k=settings["top_k"],
         history=history,
+        mode=MODE_CONSULTATION,
+        run_id=run_id,
     )
-    if answer is None:
-        return
+    if answer is not None:
+        rendered_answer = linkify_citations(answer or "", chunks)
+        # Persist the turn and trim again so the buffer in session_state never
+        # grows beyond the configured cap (defence-in-depth — the trim above
+        # only protects the prompt; this one protects the UI state).
+        messages = list(st.session_state.get("messages", []))
+        messages.append({"role": "user", "content": query})
+        messages.append(
+            {
+                "role": "assistant",
+                "content": rendered_answer or "",
+                "prompt": prompt,
+                "chunks": chunks,
+            }
+        )
+        st.session_state["messages"] = trim_history(messages, max_history_messages)
+        st.session_state.pop(SESSION_LAST_ERROR_KEY, None)
 
-    rendered_answer = linkify_citations(answer or "", chunks)
-    with st.chat_message("assistant"):
-        st.markdown(rendered_answer or "_(empty response)_")
-        if settings["debug"]:
-            with st.expander("Prompt sent to LLM", expanded=False):
-                st.code(prompt, language="markdown")
-            render_chunks(chunks, settings["debug"])
-
-    # Persist the turn and trim again so the buffer in session_state never
-    # grows beyond the configured cap (defence-in-depth — the trim above only
-    # protects the prompt; this one protects the UI state).
-    messages = list(st.session_state.get("messages", []))
-    messages.append({"role": "user", "content": query})
-    messages.append({"role": "assistant", "content": rendered_answer or ""})
-    st.session_state["messages"] = trim_history(messages, max_history_messages)
-    _render_chat_export_button()
+    _finish_pending_generation()
+    st.rerun()
 
 
 def _build_analysis_export_row(
@@ -789,6 +1090,8 @@ def _retrieve_and_answer(
     query: str,
     top_k: int,
     history: Optional[Sequence[Dict[str, str]]],
+    mode: str,
+    run_id: str,
 ) -> tuple[Optional[str], List[Dict[str, Any]], str]:
     """Run retrieval + LLM call and surface errors via Streamlit.
 
@@ -796,31 +1099,60 @@ def _retrieve_and_answer(
     retrieval or the LLM call failed — the caller should simply ``return`` so
     Streamlit can render the partial state already written via ``st.error``.
     """
-    from src.llm.client import LLMError
+    st.session_state[SESSION_LAST_QUERY_KEY] = query.strip()
 
     try:
         with st.spinner("Searching knowledge base…"):
             chunks = search_kb(query, top_k)
-    except KBError as exc:
-        st.error(str(exc))
+    except _generation_error_types() as exc:
+        _store_generation_error(
+            query=query,
+            mode=mode,
+            run_id=run_id,
+            exc=exc,
+            provider="knowledge_base",
+        )
+        return None, [], ""
+    except Exception as exc:  # noqa: BLE001 - keep UI stable on retriever bugs
+        _store_generation_error(
+            query=query,
+            mode=mode,
+            run_id=run_id,
+            exc=exc,
+            provider="knowledge_base",
+        )
         return None, [], ""
 
     prompt = build_user_prompt(query, chunks, history=history)
     prompt_tokens = estimate_token_count(prompt)
     history_msgs = len(history) if history else 0
-    logger.info(
-        "ui_prompt_built mode=%s history_messages=%d approx_tokens=%d",
-        "consultation" if history is not None else "stateless",
-        history_msgs,
-        prompt_tokens,
+    _safe_log_prompt_built(
+        run_id=run_id,
+        mode=mode,
+        history_messages=history_msgs,
+        approx_tokens=prompt_tokens,
     )
 
     try:
         with st.spinner("Calling LLM (GigaChat → OpenRouter → Ollama)…"):
             client = get_llm_client()
             answer = client.generate_rag_response(get_rag_system_prompt(), prompt)
-    except LLMError as exc:
-        st.error(str(exc))
+    except _generation_error_types() as exc:
+        _store_generation_error(
+            query=query,
+            mode=mode,
+            run_id=run_id,
+            exc=exc,
+        )
+        render_chunks(chunks, False)
+        return None, chunks, prompt
+    except Exception as exc:  # noqa: BLE001 - no raw tracebacks in Streamlit
+        _store_generation_error(
+            query=query,
+            mode=mode,
+            run_id=run_id,
+            exc=exc,
+        )
         render_chunks(chunks, False)
         return None, chunks, prompt
 
