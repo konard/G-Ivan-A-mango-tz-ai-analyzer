@@ -160,3 +160,74 @@ def test_main_writes_report_with_stub_retriever(tmp_path: Path) -> None:
     assert report["retriever"] == "stub"
     assert report["subset"] == "smoke"
     assert report["hit_rate"] == 1.0
+
+
+def test_load_golden_set_supports_issue_jsonl_shape(tmp_path: Path) -> None:
+    module = _load_module()
+    golden = tmp_path / "golden_set_v1.jsonl"
+    golden.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "query": "настройка SIP транка",
+                        "expected_sources": ["SIP_trunk-1.23.43.pdf"],
+                        "expected_pages": [10],
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "question": "SSO авторизация",
+                        "expected_sources": ["MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"],
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    items = module.load_golden_set(golden)
+
+    assert [item.id for item in items] == ["JSONL-001", "JSONL-002"]
+    assert items[0].question == "настройка SIP транка"
+    assert items[0].expected_pages == [10]
+
+
+def test_main_hybrid_returns_friendly_error_when_chroma_missing(tmp_path: Path) -> None:
+    module = _load_module()
+    config = tmp_path / "embedding_config.yaml"
+    config.write_text(
+        """
+model_name: BAAI/bge-m3
+chunk_size: 512
+vector_store:
+  persist_directory: ./missing_chroma
+  collection_name: clarify_engine_kb
+""".strip(),
+        encoding="utf-8",
+    )
+    golden = tmp_path / "golden_set_v1.jsonl"
+    golden.write_text(
+        json.dumps(
+            {"query": "test", "expected_sources": ["source.pdf"]}, ensure_ascii=False
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = module.main(
+        [
+            "--golden",
+            str(golden),
+            "--config",
+            str(config),
+            "--retriever",
+            "hybrid",
+            "--output",
+            str(tmp_path / "report.json"),
+        ]
+    )
+
+    assert exit_code == 2

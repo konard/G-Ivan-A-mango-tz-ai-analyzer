@@ -1,6 +1,6 @@
 """RAG retrieval-quality evaluator (BL-05, issue #87).
 
-Reads a Golden Set (``test_data/rag_golden_set.json``), runs each question
+Reads a Golden Set (JSON or JSONL), runs each question
 through the project retriever, and reports three metrics:
 
 * **Hit Rate @K** — fraction of questions for which at least one chunk in
@@ -19,8 +19,9 @@ end-to-end.
 Usage::
 
     python scripts/evaluate/evaluate_rag.py \\
-        --golden test_data/rag_golden_set.json \\
-        --output reports/rag_eval.json \\
+        --golden data/golden_set_v1.jsonl \\
+        --output outputs/eval_report_v1.json \\
+        --config configs/embedding_config.yaml \\
         --k 5 [--subset smoke] [--retriever stub]
 
 The ``--retriever stub`` flag is the CI smoke entry point (BL-05.1): it
@@ -40,14 +41,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.llm.masking import sanitize_log_record  # noqa: E402
+from src.rag.retriever import load_embedding_config, resolve_vector_store_path  # noqa: E402
 
 logger = logging.getLogger("evaluate_rag")
 
-DEFAULT_GOLDEN_PATH = REPO_ROOT / "test_data" / "rag_golden_set.json"
+DEFAULT_GOLDEN_PATH = REPO_ROOT / "data" / "golden_set_v1.jsonl"
+DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "embedding_config.yaml"
+DEFAULT_OUTPUT_PATH = REPO_ROOT / "outputs" / "eval_report_v1.json"
 DEFAULT_K = 5
 
 RetrieverFn = Callable[[str, int], List[Dict[str, Any]]]
@@ -62,24 +68,38 @@ class GoldenItem:
     question: str
     expected_sources: List[str] = field(default_factory=list)
     expected_substrings: List[str] = field(default_factory=list)
+    expected_pages: List[int] = field(default_factory=list)
     subset: str = ""
 
     @classmethod
-    def from_dict(cls, raw: Dict[str, Any]) -> "GoldenItem":
+    def from_dict(cls, raw: Dict[str, Any], fallback_id: str = "") -> "GoldenItem":
         return cls(
-            id=str(raw.get("id", "")),
-            question=str(raw.get("question", "")),
+            id=str(raw.get("id") or fallback_id),
+            question=str(raw.get("question") or raw.get("query") or ""),
             expected_sources=[str(s) for s in raw.get("expected_sources", []) or []],
             expected_substrings=[str(s) for s in raw.get("expected_substrings", []) or []],
+            expected_pages=[int(p) for p in raw.get("expected_pages", []) or []],
             subset=str(raw.get("subset", "")),
         )
 
 
 def load_golden_set(path: Path) -> List[GoldenItem]:
-    """Read and validate ``test_data/rag_golden_set.json``."""
+    """Read and validate a Golden Set from JSON or JSONL."""
+    if path.suffix.lower() == ".jsonl":
+        items: List[GoldenItem] = []
+        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            raw = json.loads(line)
+            items.append(GoldenItem.from_dict(raw, fallback_id=f"JSONL-{line_no:03d}"))
+        return items
+
     data = json.loads(path.read_text(encoding="utf-8"))
-    items_raw = data.get("items") or []
-    return [GoldenItem.from_dict(item) for item in items_raw]
+    items_raw = data.get("items") if isinstance(data, dict) else data
+    return [
+        GoldenItem.from_dict(item, fallback_id=f"JSON-{idx:03d}")
+        for idx, item in enumerate(items_raw or [], start=1)
+    ]
 
 
 # ----------------------------------------------------------------- metrics --
@@ -166,7 +186,30 @@ def evaluate(
 
 
 # --------------------------------------------------------------- retrievers --
-def build_retriever(name: str, golden_path: Path) -> RetrieverFn:
+def _load_evaluation_config(config_path: Path) -> Dict[str, Any]:
+    config = load_embedding_config(str(config_path))
+    if config:
+        return config
+    if config_path.exists():
+        try:
+            return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            return {}
+    return {}
+
+
+def _ensure_chroma_data(config_path: Path) -> None:
+    config = _load_evaluation_config(config_path)
+    project_root = REPO_ROOT if config_path.resolve() == DEFAULT_CONFIG_PATH else config_path.parent
+    chroma_path = resolve_vector_store_path(config, project_root=project_root)
+    if not chroma_path.exists():
+        raise FileNotFoundError(
+            f"Chroma data directory not found: {chroma_path}. "
+            "Build the index first, or run with --retriever stub for a smoke check."
+        )
+
+
+def build_retriever(name: str, golden_path: Path, config_path: Path = DEFAULT_CONFIG_PATH) -> RetrieverFn:
     """Create a retriever callable selected by ``--retriever``.
 
     * ``"hybrid"`` (default) — the production HybridChromaRetriever wired into
@@ -176,10 +219,11 @@ def build_retriever(name: str, golden_path: Path) -> RetrieverFn:
       dependencies or a Chroma index.
     """
     if name == "hybrid":
+        _ensure_chroma_data(config_path)
         from src.rag.retriever import HybridChromaRetriever
 
         retriever = HybridChromaRetriever.from_config(
-            config_path=str(REPO_ROOT / "configs" / "embedding_config.yaml"),
+            config_path=str(config_path),
             project_root=REPO_ROOT,
         )
 
@@ -273,7 +317,8 @@ def write_report(report: Dict[str, Any], path: Path) -> None:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate RAG retrieval quality (BL-05)")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
-    parser.add_argument("--output", type=Path, default=REPO_ROOT / "reports" / "rag_eval.json")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--k", type=int, default=DEFAULT_K)
     parser.add_argument("--retriever", choices=("hybrid", "stub"), default="hybrid")
     parser.add_argument(
@@ -291,16 +336,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     configure_logging(run_id)
     logger.info("RAG evaluation started (run_id=%s, k=%s)", run_id, args.k)
 
-    items = filter_items(load_golden_set(args.golden), args.subset or None)
-    if not items:
-        logger.error("Golden Set %s yielded zero items (subset=%r).", args.golden, args.subset)
+    try:
+        items = filter_items(load_golden_set(args.golden), args.subset or None)
+        if not items:
+            logger.error("Golden Set %s yielded zero items (subset=%r).", args.golden, args.subset)
+            return 2
+        retriever_fn = build_retriever(args.retriever, args.golden, args.config)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        logger.error("%s", exc)
         return 2
 
-    retriever_fn = build_retriever(args.retriever, args.golden)
     report = evaluate(items, retriever_fn, k=args.k)
     report["run_id"] = run_id
     report["retriever"] = args.retriever
     report["subset"] = args.subset or "all"
+    report["config"] = str(args.config)
 
     write_report(report, args.output)
     logger.info(

@@ -10,6 +10,13 @@
 - **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
 
 ### Added
+- **MINOR: evaluation script for RAG metrics (BL-05, issue #105).**
+  `scripts/evaluate/evaluate_rag.py` reads the Golden Set from
+  `data/golden_set_v1.jsonl`, loads retrieval settings from
+  `configs/embedding_config.yaml`, computes Hit Rate@5 and MRR, and writes
+  `outputs/eval_report_v1.json`. The runner supports `--config` and emits a
+  clear error when the configured Chroma directory is missing. Metric formulas
+  are documented in `docs/standards/evaluation-metrics.md`.
 - **MINOR: metadata inheritance & coverage improvement (BL-02 hardening, issue #109).**
   `knowledge_base/indexing/build_index.py` добавляет per-document
   `SectionPropagationState`: чанки без локального заголовка наследуют
