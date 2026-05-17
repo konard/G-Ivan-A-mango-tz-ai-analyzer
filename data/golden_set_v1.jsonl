@@ -1,0 +1,7 @@
+{"query": "настройка SIP транка", "expected_sources": ["SIP_trunk-1.23.43.pdf"], "expected_pages": [10]}
+{"query": "SSO авторизация в личном кабинете", "expected_sources": ["MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"], "expected_pages": [1]}
+{"query": "расширение Click2Call для Chrome", "expected_sources": ["Click2call_Chrome_UserManual_1_0.pdf"], "expected_pages": [1]}
+{"query": "методы VPBX API", "expected_sources": ["MangoOffice_VPBX_API_v1.9.pdf"], "expected_pages": [5]}
+{"query": "ролевая модель ВАТС", "expected_sources": ["Rolevaya-model-VATS_1_26_08.pdf"], "expected_pages": [3]}
+{"query": "отчеты Quality Management", "expected_sources": ["QM_manual_v-1.26.08_compressed.pdf"], "expected_pages": [7]}
+{"query": "сценарий скоринга речевой аналитики", "expected_sources": ["RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"], "expected_pages": [12]}

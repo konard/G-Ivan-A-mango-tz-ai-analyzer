@@ -24,6 +24,7 @@ import logging
 import re
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional, Sequence
 
 import streamlit as st
@@ -50,8 +51,10 @@ except ImportError:  # pragma: no cover - declared in requirements.txt
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LLM_CONFIG_PATH = PROJECT_ROOT / "configs" / "llm_config.yaml"
 EMBEDDING_CONFIG_PATH = PROJECT_ROOT / "configs" / "embedding_config.yaml"
+UI_CONFIG_PATH = PROJECT_ROOT / "configs" / "ui_config.yaml"
 ENV_PATH = PROJECT_ROOT / ".env"
 SOURCES_DIR = PROJECT_ROOT / "knowledge_base" / "sources"
+DEFAULT_CITATIONS_BASE_URL = "http://localhost:8000/docs"
 
 DEFAULT_TOP_K = 5
 CHUNK_PREVIEW_CHARS = 600
@@ -111,6 +114,34 @@ def load_llm_config(path: Path = LLM_CONFIG_PATH) -> Dict[str, Any]:
         st.warning(f"Failed to parse {path.name}: {exc}")
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def load_ui_config(path: Path = UI_CONFIG_PATH) -> Dict[str, Any]:
+    """Load ``configs/ui_config.yaml``; return ``{}`` on any failure."""
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        st.warning(f"Failed to parse {path.name}: {exc}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def get_citations_config(ui_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return citation link settings with backwards-compatible defaults."""
+    cfg = ui_config if ui_config is not None else load_ui_config()
+    citations = cfg.get("citations") if isinstance(cfg, dict) else None
+    if not isinstance(citations, dict):
+        citations = {}
+    source_dir_raw = citations.get("source_dir", "knowledge_base/sources")
+    source_dir = Path(str(source_dir_raw))
+    if not source_dir.is_absolute():
+        source_dir = PROJECT_ROOT / source_dir
+    return {
+        "base_url": str(citations.get("base_url") or DEFAULT_CITATIONS_BASE_URL),
+        "source_dir": source_dir,
+    }
 
 
 def truncate(text: str, limit: int = CHUNK_PREVIEW_CHARS) -> str:
@@ -197,25 +228,27 @@ def build_citation_link(
     page: Any,
     *,
     section_signature: str = "",
-    sources_dir: Path = SOURCES_DIR,
+    base_url: Optional[str] = None,
 ) -> str:
     """Return a clickable Markdown citation pinned to a PDF page.
 
-    Format follows the BL-09 spec: ``[source.pdf, стр. N](file:///abs/path#page=N)``.
+    Format follows the BL-09.1 spec: ``[source.pdf, стр. N](base/source.pdf#page=N)``.
     When the page number is missing or non-integer, the link still resolves to
     the source file (no ``#page`` anchor).
     """
     if not source:
         return ""
-    abs_path = (sources_dir / source).resolve()
+    cfg = get_citations_config()
+    resolved_base_url = (base_url or str(cfg["base_url"])).rstrip("/")
     page_int = _coerce_page(page)
     section_suffix = f", {section_signature}" if section_signature else ""
+    encoded_source = quote(Path(source).name)
+    target = f"{resolved_base_url}/{encoded_source}"
     if page_int:
         label = f"{source}, стр. {page_int}{section_suffix}"
-        target = f"file://{abs_path}#page={page_int}"
+        target = f"{target}#page={page_int}"
     else:
         label = f"{source}{section_suffix}"
-        target = f"file://{abs_path}"
     return f"[{label}]({target})"
 
 
@@ -276,7 +309,7 @@ def linkify_citations(
     answer: str,
     chunks: List[Dict[str, Any]],
     *,
-    sources_dir: Path = SOURCES_DIR,
+    base_url: Optional[str] = None,
 ) -> str:
     """Rewrite ``[filename.pdf]`` placeholders in ``answer`` to BL-09 links.
 
@@ -301,7 +334,7 @@ def linkify_citations(
             source,
             meta.get("page"),
             section_signature=str(meta.get("section_signature") or ""),
-            sources_dir=sources_dir,
+            base_url=base_url,
         )
         return link or match.group(0)
 
