@@ -7,6 +7,7 @@
 - [`naming-convention.md`](naming-convention.md) — стандарт именования файлов документации (ISO 8601, типы документов, семантическое версионирование).
 - [`embedding-model.md`](embedding-model.md) — стандарт модели эмбеддингов (`BAAI/bge-m3`, критерии замены).
 - [`export-markup.md`](export-markup.md) — единая схема разметки результата ИИ-анализа ТЗ для форматов `.xlsx` / `.docx` / `.md` (issue [#79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)).
+- [`llm-behavior.md`](llm-behavior.md) — стандарт параметров декодирования LLM (`temperature`, `top_p`, `seed`, `max_tokens`) и аудит-логирование (BL-22, issue [#101](https://github.com/G-Ivan-A/clarify-engine-ai/issues/101)).
 - [`templates/analysis-template.md`](templates/analysis-template.md) — шаблон для аналитических отчётов и ревью.
 - [`templates/decision-template.md`](templates/decision-template.md) — шаблон для документов с решениями вне ADR.
 
