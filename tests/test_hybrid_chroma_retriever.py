@@ -12,6 +12,7 @@ or a populated ``./chroma_data`` directory.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -164,3 +165,26 @@ def test_hybrid_chroma_score_is_rrf_not_raw_distance() -> None:
     top = results[0]
     if top["similarity"] is not None:
         assert top["score"] != top["similarity"]
+
+
+def test_hybrid_chroma_search_logs_fusion_breakdown(caplog) -> None:
+    """DoD (issue #91): a search must emit a log line that proves RRF fusion ran.
+
+    The line includes BM25 hits, dense hits, fused count, ``rrf_k`` and
+    ``top_k`` so an operator can confirm both branches contributed and that
+    the configured RRF constant was honoured.
+    """
+    retriever = _retriever_with_docs(SAMPLE_DOCS, top_k=2)
+    caplog.set_level(logging.INFO, logger="src.rag.retriever")
+    retriever.search("REST API SOAP", top_k=2)
+    fusion_logs = [
+        record for record in caplog.records
+        if "HybridChromaRetriever.search" in record.getMessage()
+    ]
+    assert fusion_logs, "Expected a fusion log line from HybridChromaRetriever.search"
+    message = fusion_logs[-1].getMessage()
+    assert "bm25_hits=" in message
+    assert "dense_hits=" in message
+    assert "fused=" in message
+    assert "rrf_k=60" in message
+    assert "top_k=2" in message

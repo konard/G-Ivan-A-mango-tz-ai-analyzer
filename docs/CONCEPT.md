@@ -191,6 +191,8 @@
 | **NFR-08** | Доступность сервиса | ≥ 99 % на этапе Пилот при доступности хотя бы одного из 2 LLM-провайдеров | Healthcheck fallback-цепочки, мониторинг latency и retries | планируется на этапе Пилот |
 | **NFR-09** | Безопасность загрузки | Лимит размера файла UI ≤ 10 МБ, лимит количества требований ≤ N | `st.set_option("server.maxUploadSize", 10)`, валидация в `src/app.py` | `src/app.py` |
 
+> **Примечание (MVP/Пилот, issue #89):** Для этапов MVP и Пилота допускается использование зарубежных LLM-API (OpenRouter) в режиме `use_test_data_mode: true` при условии обязательного маскирования чувствительных данных (BL-04, BL-23). Приоритет провайдеров на MVP: OpenRouter (free tier, `allowed_for_production: false`) → GigaChat → DeepSeek. Возврат к 100% RU-резидентности — критерий перехода в Production (NFR-04).
+
 **Параметры обработки данных** (зафиксированы как стандарты, см. [`docs/standards/embedding-model.md`](standards/embedding-model.md)):
 - Чанкинг: 200–300 токенов, overlap 50.
 - Модель эмбеддингов: `BAAI/bge-m3` (1024 dim, multilingual, локальное исполнение).

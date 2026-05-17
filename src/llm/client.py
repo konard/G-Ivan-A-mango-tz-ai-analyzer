@@ -815,6 +815,10 @@ def _call_openrouter_rag(system_prompt: str, user_message: str, config: Dict[str
     except requests.exceptions.RequestException as exc:
         raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
 
+    if response.status_code == 429:
+        raise RetriableProviderError(
+            f"OpenRouter rate-limit HTTP 429: {response.text[:300]}"
+        )
     if response.status_code >= 400:
         raise RuntimeError(
             f"OpenRouter returned HTTP {response.status_code}: {response.text[:300]}"

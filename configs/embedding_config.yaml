@@ -24,7 +24,9 @@ max_chunk_size: 768
 section_aware_chunking: true
 
 # --- Retrieval ----------------------------------------------------------------
-top_k: 3
+# BL-01: top_k=5 is the production contract for the Streamlit UI → LLM context
+# window. rrf_k=60 is the Reciprocal Rank Fusion constant per ADR-001 §4.2.
+top_k: 5
 rrf_k: 60
 
 # --- STRICT_MODE (BL-03, BL-16a, CONCEPT §7 R-01) -----------------------------

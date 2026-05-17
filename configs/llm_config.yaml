@@ -1,8 +1,9 @@
 # LLM provider configuration for the Clarify Engine RAG pipeline.
 # Synchronised with docs/standards/embedding-model.md v1.1 and
 # docs/audit/data-masking_v1.md v1.2 (BL-04, BL-22, BL-23 — issue #87).
+# Updated for MVP/Pilot: OpenRouter priority=1 (free tier), GigaChat priority=2,
+# DeepSeek priority=3. Data-residency relaxed to masking+test-mode (issue #89).
 
-active_provider: "deepseek"
 use_test_data_mode: true
 
 # --- Temperature lock + decoding parameters (BL-22, FR-08, NFR-06) ------------
@@ -22,19 +23,34 @@ decoding:
 mask_rag_context: true
 
 providers:
-  deepseek:
+  openrouter:
     priority: 1
-    model: "deepseek-chat"
-    api_key_env: "DEEPSEEK_API_KEY"
-    allowed_for_production: false
-    retry_attempts: 3
+    model: "qwen/qwen2.5-72b-instruct:free"
+    api_key_env: "OPENROUTER_API_KEY"
+    allowed_for_production: false  # free tier for MVP tests only
+    retry_attempts: 2
+    fallback_models:
+      - "qwen/qwen2.5-72b-instruct:free"
+      - "meta-llama/llama-3.3-70b-instruct:free"
+      - "google/gemini-2.0-flash-exp:free"
+      - "openrouter/free"  # final auto-router
+
   gigachat:
     priority: 2
     model: "GigaChat-Pro"
     credentials_env: "GIGACHAT_AUTH"
     allowed_for_production: true
     retry_attempts: 3
+    verify_ssl: false  # for corporate proxies (test)
+
+  deepseek:
+    priority: 3
+    model: "deepseek-chat"
+    api_key_env: "DEEPSEEK_API_KEY"
+    allowed_for_production: true  # paid final reserve
+    retry_attempts: 3
 
 fallback_providers:
-  - "deepseek"
+  - "openrouter"
   - "gigachat"
+  - "deepseek"

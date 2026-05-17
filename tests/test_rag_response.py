@@ -26,6 +26,7 @@ from src.llm.client import (  # noqa: E402
     RAG_FALLBACK_CHAIN,
     LLMClient,
     LLMError,
+    RetriableProviderError,
 )
 
 
@@ -190,3 +191,63 @@ def test_classify_requirement_still_works_after_rag_addition(monkeypatch) -> Non
     result = client.classify_requirement("Что-то", context_chunks=[])
     assert result.classification == "Да"
     assert result.provider == "deepseek"
+
+
+def test_call_openrouter_rag_raises_retriable_error_on_429(monkeypatch) -> None:
+    """Issue #89: HTTP 429 from OpenRouter must raise RetriableProviderError, not RuntimeError."""
+    import unittest.mock as mock
+
+    fake_response = mock.MagicMock()
+    fake_response.status_code = 429
+    fake_response.text = "Rate limit exceeded"
+
+    import requests as req_module
+
+    monkeypatch.setattr(req_module, "post", lambda *a, **kw: fake_response)
+
+    import importlib
+    import sys
+
+    # Patch requests inside the client module scope
+    fake_requests = mock.MagicMock()
+    fake_requests.post.return_value = fake_response
+    fake_requests.exceptions = req_module.exceptions
+    monkeypatch.setattr(client_module, "requests", fake_requests, raising=False)
+
+    # Use a direct call to _call_openrouter_rag with a fake api key in env
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    import importlib as _il
+
+    # Call _call_openrouter_rag which is defined at module level
+    from src.llm.client import _call_openrouter_rag
+
+    with pytest.raises(RetriableProviderError, match="429"):
+        with mock.patch("requests.post", return_value=fake_response):
+            _call_openrouter_rag("sys", "user", {"model": "test/model:free"})
+
+
+def test_openrouter_priority_in_config() -> None:
+    """Issue #89 DoD: OpenRouter must be priority=1 in llm_config.yaml."""
+    import yaml
+    from pathlib import Path
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "llm_config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    openrouter_priority = config["providers"]["openrouter"]["priority"]
+    assert openrouter_priority == 1, f"Expected openrouter priority=1, got {openrouter_priority}"
+
+
+def test_openrouter_has_free_fallback_models() -> None:
+    """Issue #89 DoD: OpenRouter fallback_models must all use :free suffix."""
+    import yaml
+    from pathlib import Path
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "llm_config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    fallback_models = config["providers"]["openrouter"].get("fallback_models", [])
+    assert len(fallback_models) > 0, "fallback_models must not be empty"
+    for model in fallback_models:
+        assert ":free" in model or model == "openrouter/free", (
+            f"Model '{model}' in fallback_models must be a :free model"
+        )
