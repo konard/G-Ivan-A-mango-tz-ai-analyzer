@@ -21,6 +21,15 @@
   изолированы `try/except`, чтобы сбой логирования не ронял Streamlit.
   ADR — [`docs/ADR/007-error-handling.md`](docs/ADR/007-error-handling.md);
   тесты — `tests/test_ui_error_handling.py`.
+- **MINOR: audit trail with run_id tracing & BL-04 compliance (BL-23, issue #103).**
+  `src/llm/client.py` creates a 12-hex per-request `run_id` for
+  `classify_requirement()` and `generate_rag_response()`, preserves it through
+  provider fallback via provider config, and emits masked structured
+  `LLM_REQUEST` / `LLM_RESPONSE` records with provider, decoding params,
+  prompt version/hash, response status, and latency. Logger failures are
+  best-effort and do not interrupt the main LLM request. ADR:
+  [`docs/ADR/005-audit-trail.md`](docs/ADR/005-audit-trail.md); tests:
+  `tests/test_audit_trail.py`.
 - **MINOR: evaluation script for RAG metrics (BL-05, issue #105).**
   `scripts/evaluate/evaluate_rag.py` reads the Golden Set from
   `data/golden_set_v1.jsonl`, loads retrieval settings from
