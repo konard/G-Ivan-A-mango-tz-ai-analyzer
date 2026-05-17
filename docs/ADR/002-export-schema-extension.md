@@ -2,8 +2,9 @@
 
 **Status:** Proposed (Post-Pilot)
 **Date:** 2026-05-15
+**Last Updated:** 2026-05-17 (added §Multi-format compatibility note, V-09 from backlog v1.1)
 **Owner:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
-**Связанные документы:** [CONCEPT.md §4 FR-06](../CONCEPT.md), [ADR-001](001-rag-architecture.md), [issue #48](https://github.com/G-Ivan-A/clarify-engine-ai/issues/48)
+**Связанные документы:** [CONCEPT.md §4 FR-06](../CONCEPT.md), [ADR-001](001-rag-architecture.md), [standards/export-markup.md](../standards/export-markup.md), [issue #48](https://github.com/G-Ivan-A/clarify-engine-ai/issues/48), [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)
 
 ---
 
@@ -48,3 +49,33 @@ ADR.
 - Завершение Пилота и сбор обратной связи от БА.
 - Появление новых требований к аудируемости (например, регуляторных).
 - Изменение состава классификации или fallback-цепочки (см. ADR-001).
+
+## Multi-format compatibility (issue #79, V-09)
+
+С переносом мульти-форматного экспорта (`.xlsx` / `.docx` / `.md`) в
+MVP-скоуп (CONCEPT.md v2.3 §2.3, §4 FR-06) расширенная схема ADR-002
+**ортогональна** новым форматам и должна сохранить совместимость:
+
+- **Контракт MVP неизменен.** Четыре MVP-колонки FR-06
+  (`[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`) остаются
+  стабильным форматно-инвариантным контрактом для всех целевых
+  форматов экспорта. Изменение их состава, имён или семантики
+  возможно только через новую ревизию ADR-002.
+- **Принцип расширения.** Новые поля, утверждённые по итогам Пилота,
+  добавляются:
+  - в `.xlsx` — **справа** от четырёх MVP-колонок, без перестановки;
+  - в `.docx` / `.md` — **отдельной секцией** (`[EXTENDED:]` под
+    основной строкой требования), без модификации блока MVP-маркеров;
+  - версия схемы фиксируется в поле `schema_version` YAML
+    front-matter `.md`-отчёта и в `meta`-листе `.xlsx`-отчёта
+    (см. [`standards/export-markup.md`](../standards/export-markup.md)
+    §2 и §4).
+- **Контроль расхождения.** Любая правка `ExportRouter` или адаптеров
+  `docx_exporter.py` / `md_exporter.py` (BL-20) должна пройти
+  cross-check на соответствие текущему перечню колонок ADR-002 и
+  обновить `schema_version`. Расхождение между форматами по составу
+  полей запрещено.
+
+Эта секция фиксирует политику до момента, когда ADR-002 перейдёт в
+статус `Accepted` и сам определит полный перечень полей для всех
+форматов.

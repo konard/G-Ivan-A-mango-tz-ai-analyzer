@@ -1,9 +1,9 @@
 # 📘 Концепция внедрения ИИ-анализатора тендерных ТЗ (MVP)
 
-**Версия:** 2.2 | **Дата:** 2026-05-17 | **Статус:** Approved for MVP
+**Версия:** 2.3 | **Дата:** 2026-05-17 | **Статус:** Approved for MVP
 **Владелец документа:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
 **Тип документа:** Single Source of Truth (SSoT)
-**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1), [issue #77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77) (v2.2)
+**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1), [issue #77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77) (v2.2), [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79) (v2.3)
 
 > Документ соответствует стандартам ISO/IEC 29148 (требования), ISO/IEC 42001 (управление ИИ), ISO/IEC 23894 (риски ИИ), NIST AI RMF и BABOK v3. Изменения вносятся через Pull Request с обязательным согласованием Product Owner.
 
@@ -63,6 +63,8 @@
 - Зарубежные LLM-API (DeepSeek) допускаются **только** при включённом флаге `use_test_data_mode: true` и после маскирования.
 - **Human-in-the-Loop UX (MVP):** `Read-only review` экспортированного файла. БА получает результат с колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и проверяет строки с пометкой `requires_ba_review` или `[Статус: Ошибка]` вне приложения (Excel / LibreOffice). **Inline-редактирование и save-back в систему — отложено до этапа Пилот** (см. раздел 8.1.2).
 - **Source of Truth для KB (MVP):** документы базы знаний загружаются **вручную** через Git или облачное хранилище в каталог `knowledge_base/sources/`. **Автоматическая синхронизация с SharePoint / общим диском — отложена до этапа Пилот** (см. раздел 8.1.2).
+- **Поддержка `.docx`-входа и multi-format export (MVP, scope shift v2.3 по [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)):** входные ТЗ принимаются в форматах `.xlsx` **и** `.docx`; экспорт результата возможен в `xlsx` / `docx` / `md` с выбором режима `create_new` (default) или `append_to_original` (вне production-конфига). Legacy-формат `.doc` (binary MS Word 97–2003) — **Out-of-Scope MVP**, требуется внешняя конвертация в `.docx`. Контракт 4 MVP-колонок FR-06 сохраняется во всех форматах вывода через единую схему разметки — см. [`docs/standards/export-markup.md`](standards/export-markup.md).
+- **Запрет на модификацию исходных файлов:** независимо от формата, исходный файл ТЗ (в `test_data/` или загруженный через UI) **не модифицируется**; результат пишется в отдельный файл-отчёт `<tz_basename>_report_<runId8>.<ext>` (см. [`docs/standards/export-markup.md`](standards/export-markup.md) §6) с явным маппингом каждого результата на элемент исходника (поле `Ref`). Режим `append_to_original` — только под флагом `export.append_mode: true` и **никогда** в production.
 
 ---
 
@@ -93,12 +95,12 @@
 ### FR-01. Парсинг входных файлов ТЗ
 | Поле | Значение |
 |------|----------|
-| **Описание** | Поддержка форматов `.xlsx` и `.docx`. Извлечение атомарных требований, очистка от форматирования, последовательная нумерация записей. |
-| **Вход** | Файл `.xlsx` или `.docx` пользователя |
-| **Выход** | Список `[{id, text}]` атомарных требований |
-| **Критерий приёмки** | Файл загружается без ошибок; возвращается непустой список `[{id, text}]`; пустые ячейки и нечитаемые строки не приводят к падению; для каждого требования сохраняется исходный индекс. |
-| **Артефакты** | `src/parsers/excel_parser.py`, `src/parsers/docx_parser.py`, `tests/test_excel_parser.py`, `configs/parsing_config.yaml` |
-| **Статус MVP** | `.xlsx` — реализовано; `.docx` — отложено до Пилота (см. [`docs/audit/2026-05-12_repository-consistency_audit_v1.md`](audit/2026-05-12_repository-consistency_audit_v1.md), раздел 2.1, рекомендация #9) |
+| **Описание** | Поддержка форматов `.xlsx` и `.docx` через единый диспетчер по расширению (`load_requirements_by_extension`). Извлечение атомарных требований, очистка от форматирования, последовательная нумерация записей, **сохранение локатора** (`sheet`/`row` для `.xlsx`, `para_index` или `table/row/col` для `.docx`) — см. [`docs/standards/export-markup.md`](standards/export-markup.md) §3. |
+| **Вход** | Файл `.xlsx` (single- и multi-sheet) или `.docx` пользователя |
+| **Выход** | Список `[{id, text, locator}]` атомарных требований |
+| **Критерий приёмки** | Файл загружается без ошибок; возвращается непустой список `[{id, text, locator}]`; пустые ячейки и нечитаемые строки не приводят к падению; для каждого требования сохраняется исходный индекс **и** непустой `locator`; multi-sheet `.xlsx` обрабатывается на всех листах с сохранением имени листа в `locator.sheet`. |
+| **Артефакты** | `src/parsers/excel_parser.py`, `src/parsers/docx_parser.py`, `src/parsers/__init__.py` (диспетчер), `tests/test_excel_parser.py`, `tests/test_docx_parser.py`, `configs/parsing_config.yaml` (секция `docx_parser:`) |
+| **Статус MVP** | `.xlsx` — реализовано; **`.docx` — включено в MVP** (scope shift v2.3, [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79); план реализации — [BL-18](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)). Legacy `.doc` (binary MS Word 97–2003) — Out-of-Scope MVP: пайплайн отдаёт диагностическое исключение с инструкцией по конвертации в `.docx`. |
 
 ### FR-02. Индексация базы знаний
 | Поле | Значение |
@@ -141,25 +143,28 @@
 ### FR-06. Экспорт результатов
 | Поле | Значение |
 |------|----------|
-| **Описание** | Сохранение результатов анализа в исходный формат файла с добавлением колонок результата. **MVP-набор колонок (закреплён):** `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. Расширенная схема (рекомендации, провайдер, требует ревью и др.) выносится в [ADR-002](ADR/002-export-schema-extension.md) после Пилота. |
-| **Вход** | Исходный файл ТЗ + список `ClassificationResult` |
-| **Выход** | Файл в исходном формате с добавленными колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` |
+| **Описание** | Сохранение результатов анализа в **параллельный файл-отчёт** `<tz_basename>_report_<runId8>.<ext>` (исходник не модифицируется, см. §2.3) с выбором формата вывода `xlsx` / `docx` / `md` и режима сохранения `create_new` (default) / `append_to_original` (под флагом, не в production). **MVP-набор колонок / полей (закреплён, format-инвариант):** `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. Расширенная схема (рекомендации, провайдер, требует ревью и др.) выносится в [ADR-002](ADR/002-export-schema-extension.md) после Пилота. |
+| **Вход** | Исходный файл ТЗ + список `ClassificationResult` (+ `locator` каждого требования, FR-01) + выбор `output_format` и `output_mode` из UI (FR-07) |
+| **Выход** | Файл-отчёт в выбранном формате с четырьмя MVP-полями `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и явным маппингом `Ref` на элемент исходника (для `.docx`/`.md`); см. [`docs/standards/export-markup.md`](standards/export-markup.md) §4. |
 | **Использование `Confidence`** | `≥ 0.85` → **автопринятие** (результат не требует ручной проверки БА); `0.70 – 0.84` → **требует проверки БА** (флаг `requires_ba_review: true` отражается в `[Комментарий]`); `< 0.70` → **повторный вызов LLM или fallback** на следующего провайдера; при сохраняющемся низком значении после всех попыток — строка помечается `[Статус: Ошибка]` (см. раздел 6.7). |
-| **Критерий приёмки** | Выходной файл сохраняет структуру исходника (порядок строк, заголовки, оригинальные данные); все четыре MVP-колонки заполнены для каждой строки; `[RunID]` одинаков для всех строк одного файла и совпадает со значением в JSON-логах (FR-08); кодировка UTF-8; файл открывается в MS Excel / LibreOffice без предупреждений. |
-| **Артефакты** | `src/exporters/excel_exporter.py`, `tests/test_pipeline.py::test_run_analysis_end_to_end` |
-| **Связанные решения** | Расширение схемы экспорта — [ADR-002 (пост-пилот)](ADR/002-export-schema-extension.md); пороги `Confidence` — `configs/classification_rules.json` (`min_confidence_for_auto: 0.85`). |
+| **Критерий приёмки** | Файл-отчёт создаётся без модификации исходника; контракт 4 MVP-полей соблюдён во всех трёх форматах вывода (`xlsx`/`docx`/`md`); `[RunID]` одинаков для всех записей одного отчёта и совпадает со значением в JSON-логах (FR-08); кодировка UTF-8; `.xlsx`-отчёт открывается в MS Excel / LibreOffice без предупреждений; `.docx`/`.md`-отчёт содержит локатор `Ref` для каждой записи; все экспортёры проходят чек-лист §9 стандарта `export-markup.md`. |
+| **Артефакты** | `src/exporters/__init__.py` (`ExportRouter`), `src/exporters/excel_exporter.py`, `src/exporters/docx_exporter.py`, `src/exporters/md_exporter.py`, `configs/export_config.yaml`, `tests/test_pipeline.py::test_run_analysis_end_to_end`, `tests/test_export_router.py` |
+| **Связанные решения** | Единая схема разметки — [`docs/standards/export-markup.md`](standards/export-markup.md) v1.0; расширение схемы экспорта — [ADR-002 (пост-пилот)](ADR/002-export-schema-extension.md); пороги `Confidence` — `configs/classification_rules.json` (`min_confidence_for_auto: 0.85`); план реализации — [BL-19, BL-20](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release). |
 
 > **Примечание.** Расширенная схема экспорта (`[Цитаты]`, `[Рекомендация]`, `[Требует ревью]`, `[Провайдер]`, `[Ошибка]` и дополнительные диагностические поля) **не входит в scope MVP**. Её состав и формат фиксируются в [ADR-002](ADR/002-export-schema-extension.md) после Пилота на основе обратной связи БА. До момента принятия ADR-002 внешним интеграциям следует опираться **только** на четыре MVP-колонки.
+>
+> **Multi-format export (scope shift v2.3, [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)).** Контракт 4 MVP-колонок выше — **format-инвариант**: сериализация в `.xlsx` — правые колонки; в `.docx` — фиксированные абзацы с маркерами `[STATUS:]`/`[COMMENT:]`/`[CONFIDENCE:]`/`[RUN_ID:]`/`[Ref:]`/`[CITATION:]`; в `.md` — YAML front-matter + разделы. Подробности — в [`docs/standards/export-markup.md`](standards/export-markup.md) §§2–4.
 
 ### FR-07. Streamlit UI
 | Поле | Значение |
 |------|----------|
-| **Описание** | Web-интерфейс с двумя вкладками: **«Анализ ТЗ»** (загрузка файла, запуск анализа с индикатором прогресса, счётчик `Успешно: X / Ошибки: Y`, кнопка «Повторить только ошибки», скачивание результата) и **«Справка для БА»** (статичное руководство по интерпретации результата; **не** рендерит `docs/CONCEPT.md`, так как концепция стабильна и не меняется в результате анализа). |
+| **Описание** | Web-интерфейс с двумя вкладками: **«Анализ ТЗ»** (загрузка файла, выбор формата и режима экспорта, запуск анализа с индикатором прогресса, счётчик `Успешно: X / Ошибки: Y`, кнопка «Повторить только ошибки», скачивание результата) и **«Справка для БА»** (статичное руководство по интерпретации результата; **не** рендерит `docs/CONCEPT.md`, так как концепция стабильна и не меняется в результате анализа). |
+| **Селекторы экспорта (MVP, scope shift v2.3)** | На вкладке «Анализ ТЗ» — два radio-селектора: (1) `output_format ∈ {xlsx, docx, md}` (default = совпадает с расширением исходника; при `.doc`-исходнике — недоступно с диагностическим сообщением); (2) `output_mode ∈ {create_new, append_to_original}` (default = `create_new`; режим `append_to_original` **скрыт / disabled**, если расширения исходника и результата не совпадают, и если в `configs/export_config.yaml` не выставлен `export.append_mode: true`; **никогда не доступен** в production-конфиге). См. [`docs/standards/export-markup.md`](standards/export-markup.md) §5. |
 | **Содержимое вкладки «Справка для БА»** | (1) Интерпретация статусов `Да / Нет / Частично / НД / Ошибка`; (2) Пороги `Confidence` (`≥ 0.85` — автопринятие, `0.70 – 0.84` — требует проверки БА, `< 0.70` — повторный вызов / fallback); (3) Чек-лист ручной проверки строк с `requires_ba_review: true` (сверка цитаты, проверка контекста, корректность категории); (4) Кнопка / ссылка **«Сообщить об ошибке / Предложить улучшение»** → [GitHub Issues](https://github.com/G-Ivan-A/clarify-engine-ai/issues). |
-| **Вход** | Файл ТЗ от пользователя |
-| **Выход** | Файл с результатами анализа |
-| **Критерий приёмки** | Приложение запускается командой `streamlit run src/app.py`; обработка файла достижима **≤ 3 кликами** (upload → run → download); вкладка «Справка для БА» содержит статичную информацию по статусам, порогам Confidence и чек-листу проверки; кнопка «Запустить анализ» вызывает реальный `src.pipeline.run_analysis`, а не stub; счётчик `Успешно / Ошибки` обновляется по ходу обработки; кнопка «Повторить только ошибки» доступна при наличии строк со статусом `Ошибка`. |
-| **Артефакты** | `src/app.py`, `docs/screenshots/ui-tab-analysis.png` (скриншот вкладки «Справка для БА» — будет добавлен при реализации UI-изменений) |
+| **Вход** | Файл ТЗ от пользователя (`.xlsx` / `.docx`) + выбранные `output_format` и `output_mode` |
+| **Выход** | Файл-отчёт `<tz_basename>_report_<runId8>.<ext>` в выбранном формате (см. FR-06) |
+| **Критерий приёмки** | Приложение запускается командой `streamlit run src/app.py`; обработка файла достижима **≤ 3 кликами** (upload → run → download), даже при наличии селекторов формата/режима (значения по умолчанию валидны); вкладка «Справка для БА» содержит статичную информацию по статусам, порогам Confidence и чек-листу проверки; кнопка «Запустить анализ» вызывает реальный `src.pipeline.run_analysis`, а не stub; счётчик `Успешно / Ошибки` обновляется по ходу обработки; кнопка «Повторить только ошибки» доступна при наличии строк со статусом `Ошибка`; `output_mode = append_to_original` недоступен при несовпадении расширений и в production-конфиге. |
+| **Артефакты** | `src/app.py`, `configs/export_config.yaml`, `docs/screenshots/ui-tab-analysis.png` (скриншот вкладки «Справка для БА» — будет добавлен при реализации UI-изменений) |
 
 ### FR-08. Логирование и аудируемость
 | Поле | Значение |
@@ -323,6 +328,10 @@
 - [ ] UI позволяет загрузить файл ТЗ и скачать результат за ≤ 3 клика.
 - [ ] Документация согласована: CONCEPT v2 + ADR-001 + стандарты + аудит согласованности.
 - [ ] Все unit-тесты проходят локально (`pytest tests/`).
+- [ ] **`DocxParser` интегрирован в основной пайплайн через диспетчер по расширению; `.docx`-вход проходит E2E без падения** (scope shift v2.3, [BL-18](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)).
+- [ ] **Multi-format export реализован:** `xlsx in → {xlsx, docx, md} out`, `docx in → {docx, md} out` — все 5 round-trip-кейсов зелёные в CI; контракт 4 MVP-полей FR-06 соблюдён во всех форматах ([BL-19](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release), [BL-20](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)).
+- [ ] **UI содержит селекторы `output_format` и `output_mode`** (FR-07); `append_to_original` недоступен в production-конфиге ([BL-21](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)).
+- [ ] **Разметка результата соответствует [`docs/standards/export-markup.md`](standards/export-markup.md)** (чек-лист §9); файл-отчёт именуется `<tz_basename>_report_<runId8>.<ext>`; исходный файл не модифицируется.
 
 #### 8.1.2. Пилот (3–5 недель)
 **Цель:** Валидация на реальных ТЗ с 2–3 БА, замер production-метрик.
@@ -423,7 +432,7 @@
 | # | Вопрос | Статус | Принятое решение | Ссылка |
 |---|--------|:------:|------------------|--------|
 | 1 | Расширение схемы экспорта | ✅ Закрыт | MVP — минимальный набор `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. Расширенная схема (`[Рекомендация]`, `[Требует ревью]`, `[Провайдер]`, `[Ошибка]`, …) выносится в [ADR-002 (пост-пилот)](ADR/002-export-schema-extension.md) на основе обратной связи БА. | FR-06, раздел 4 |
-| 2 | `.docx`-парсинг / экспорт | ✅ Закрыт | **Out-of-Scope MVP**. Поднимается до уровня MUST на этапе Масштабирования (раздел 8.1.3). | FR-01, раздел 4 |
+| 2 | `.docx`-парсинг / экспорт | ✅ Закрыт (переоткрыт и закрыт повторно в v2.3) | **Включено в MVP** (scope shift v2.3, [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)): `.docx`-вход через `DocxParser` + диспетчер ([BL-18](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)); multi-format export `xlsx`/`docx`/`md` через `ExportRouter` ([BL-20](backlog/2026-05-17_backlog_rag-optimization_v1.md#121-задачи-p0-must-для-mvp-release)); единая схема разметки — [`docs/standards/export-markup.md`](standards/export-markup.md). Legacy `.doc` (binary) остаётся Out-of-Scope MVP. | FR-01, FR-06, FR-07, §2.3 |
 | 3 | Параллелизация LLM-вызовов | ✅ Закрыт | MVP — **1 пользователь, последовательная обработка** требований одним активным провайдером. Очередь / параллельные запросы — пост-пилот (зависит от TOS GigaChat). | Раздел 6.4, 8.1.3 |
 | 4 | Маскирование ФИО | ✅ Закрыт | **Отложено до Пилота.** В MVP маскируются email, телефоны РФ, IP, внутренние домены (FR-05). ФИО добавляются в `configs/masking_rules.yaml` после уточнения корпоративных требований. | FR-05, раздел 4 |
 | 5 | Human-in-the-Loop UX | ✅ Закрыт | MVP — **`Read-only review` экспортированного файла**. Inline-редактирование строк с `requires_ba_review` и save-back — этап Пилот. | Раздел 2.3, 8.1.2 |
@@ -445,6 +454,7 @@
 - [Roles & Responsibilities (RACI)](standards/roles.md)
 - [Naming convention](standards/naming-convention.md)
 - [Embedding model standard](standards/embedding-model.md)
+- [Export markup (table / Word / Markdown)](standards/export-markup.md) — единая схема разметки результата ИИ-анализа (v1.0, scope shift v2.3).
 - [Templates: analysis / decision](standards/templates/)
 
 ### Аудиты
@@ -456,6 +466,7 @@
 - [Next docs-implementation task (2026-05-13)](analysis/2026-05-13_analysis_next-docs-implementation-task_v1.md)
 - [Repo state & MVP recommendations (2026-05-15)](analysis/2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md)
 - [RAG Pipeline Analysis & Optimization Roadmap (2026-05-16)](RAG_OPTIMIZATION_ANALYSIS.md)
+- [TZ-structure analysis & `.docx` change matrix (2026-05-17)](analysis/2026-05-17_analysis_tz-structure_samples.md) — обоснование scope shift v2.3.
 
 ### Бэклоги
 - [RAG-optimization backlog v1 (2026-05-17, Draft → Review)](backlog/2026-05-17_backlog_rag-optimization_v1.md)
@@ -478,3 +489,4 @@
 | 2.0 | 2026-05-15 | Code Agent (по issue [#37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37)) | Развёрнутая версия SSoT: согласованная структура документации (раздел 3), детализированные FR-01..FR-08 с критериями приёмки (раздел 4), полный набор НФТ NFR-01..NFR-09 (раздел 5), архитектура с ссылкой на ADR-001 (раздел 6), расширенная матрица рисков R-01..R-09 (раздел 7), Exit Criteria для MVP / Пилота / Масштабирования (раздел 8), глоссарий, открытые вопросы, реестр связанных документов. |
 | 2.1 | 2026-05-15 | Code Agent (по issue [#43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43)) | Финализация scope MVP: (1) FR-06 — минимальный набор экспортируемых колонок `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и пояснение порогов Confidence; расширенная схема вынесена в ADR-002 пост-пилот; (2) FR-07 — вкладка «Концепция и БЗ» заменена на «Справка для БА»; убран динамический рендеринг `CONCEPT.md`; добавлены счётчик `Успешно / Ошибки` и кнопка «Повторить только ошибки»; (3) новый раздел 6.7 — обработка ошибок LLM (экспоненциальный backoff `5с → 15с → 45с`, fallback по цепочке, статус `[Ошибка]`, продолжение пайплайна без аварийного останова, полная трассировка по `RunID`); (4) раздел 2.3 — зафиксирован HiL UX MVP = `read-only review` и KB Source MVP = ручная загрузка Git/Cloud; (5) раздел 10 — закрыты все 7 открытых вопросов с обоснованиями и ссылками. |
 | 2.2 | 2026-05-17 | Code Agent (по issue [#77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77)) | Раздел 8.1.2 расширен подразделом «Стратегический вектор Pilot → Enterprise» со ссылкой на [ADR-003 (Concept)](ADR/003-multi-agent-orchestration-draft.md) и триггерами перехода к мультиагентной схеме (F1 ≥ 0.85, цитируемость ≥ 95 %, веб-шлюз, утверждение PO). В разделе 11 «Связанные документы» добавлены ADR-003, RAG_OPTIMIZATION_ANALYSIS.md и новый каталог `docs/backlog/` с бэклогом v1 (Draft → Review). Кодовых изменений нет; модификации `configs/`, `src/` и параметров чанкинга не выполняются до статуса бэклога `Accepted`. |
+| 2.3 | 2026-05-17 | Code Agent (по issue [#79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)) | **Scope shift `.docx` + multi-format export → MVP** (документационная фиксация, кодовых изменений нет до `Accepted`). (1) §2.3 — добавлены три ограничения/допущения: `.docx`-вход и multi-format export в MVP; запрет модификации исходника; именование файла-отчёта. (2) §4 FR-01 — `.docx` поднят из «отложено до Пилота» в «включено в MVP»; добавлено поле `locator` в контракт парсера; multi-sheet `.xlsx` явно покрыт критерием приёмки. (3) §4 FR-06 — экспорт теперь в **параллельный файл-отчёт** `<tz_basename>_report_<runId8>.<ext>`; контракт 4 MVP-полей сделан format-инвариантом; добавлены `docx_exporter`, `md_exporter`, `ExportRouter`, `configs/export_config.yaml`. (4) §4 FR-07 — добавлены UI-селекторы `output_format` и `output_mode`; `append_to_original` запрещён в production-конфиге. (5) §8.1.1 — четыре новых Exit Criteria: `DocxParser` интегрирован, multi-format E2E, UI-селекторы, соответствие [`export-markup.md`](standards/export-markup.md). (6) §10 п.2 — переоткрыт и закрыт повторно: `.docx`-парсинг включён в MVP, legacy `.doc` остаётся Out-of-Scope. (7) §11 — добавлен стандарт [`export-markup.md`](standards/export-markup.md) и аналитический отчёт `2026-05-17_analysis_tz-structure_samples.md`. План реализации зафиксирован в §12 бэклога ([BL-18..BL-21](backlog/2026-05-17_backlog_rag-optimization_v1.md#12-scope-shift-docx--multi-format-export--mvp-issue-79)). |
