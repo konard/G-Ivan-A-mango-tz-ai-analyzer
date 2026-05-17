@@ -21,6 +21,15 @@ decoding:
 # LLMClient can read the flag without parsing the embedding config.
 mask_rag_context: true
 
+# --- UI operation modes (BL-07, issue #93, ADR-004) ---------------------------
+# Controls the two-mode Streamlit UI in src/ui/app.py:
+#   * "Анализ ТЗ" — stateless batch validation (no history).
+#   * "Консультация" — stateful chat with bounded history.
+# `max_history_messages` caps the number of past messages forwarded to the LLM
+# in consultation mode (3–5× token-cost guard, see CONCEPT §6.8).
+ui:
+  max_history_messages: 6
+
 providers:
   deepseek:
     priority: 1

@@ -1,0 +1,267 @@
+"""Tests for the two-mode UI in :mod:`src.ui.app` (BL-07, issue #93).
+
+Covers the contract pinned by the issue:
+
+* `get_max_history_messages` reads `ui.max_history_messages` from
+  `configs/llm_config.yaml` (defaults to 6 when missing/malformed).
+* `trim_history` keeps **at most** N most recent messages and is a no-op
+  when the buffer is already small enough.
+* `format_history` produces a `Пользователь:` / `Ассистент:` transcript
+  suitable for inlining into the user prompt.
+* `build_user_prompt` omits the `<history>` block in stateless mode and
+  injects it in consultation mode.
+* `_ensure_mode_state` resets `st.session_state.messages` on mode switch.
+* `_reset_history` clears the buffer on demand (sidebar button).
+
+These tests reuse the lightweight Streamlit stub from
+:mod:`tests.test_citation_links` so they run without a real Streamlit
+install.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from types import ModuleType
+
+
+def _ensure_streamlit_stub() -> None:
+    """Provide a minimal stub for streamlit so :mod:`src.ui.app` can import."""
+    stub = sys.modules.get("streamlit")
+    if stub is None:
+        stub = ModuleType("streamlit")
+        sys.modules["streamlit"] = stub
+
+    def _noop(*_args, **_kwargs):
+        return None
+
+    class _Ctx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def _decorator(*_args, **_kwargs):
+        def _wrap(fn):
+            return fn
+
+        return _wrap
+
+    for attr in (
+        "set_page_config",
+        "title",
+        "write",
+        "header",
+        "subheader",
+        "caption",
+        "info",
+        "success",
+        "warning",
+        "error",
+        "markdown",
+        "divider",
+        "selectbox",
+        "button",
+        "file_uploader",
+        "download_button",
+        "rerun",
+        "link_button",
+        "code",
+        "json",
+        "toggle",
+        "slider",
+        "text_area",
+        "radio",
+        "chat_input",
+    ):
+        if not hasattr(stub, attr):
+            setattr(stub, attr, _noop)
+    if not hasattr(stub, "session_state"):
+        stub.session_state = {}
+    if not hasattr(stub, "sidebar"):
+        stub.sidebar = _Ctx()
+    if not hasattr(stub, "expander"):
+        stub.expander = lambda *_a, **_kw: _Ctx()
+    if not hasattr(stub, "spinner"):
+        stub.spinner = lambda *_a, **_kw: _Ctx()
+    if not hasattr(stub, "chat_message"):
+        stub.chat_message = lambda *_a, **_kw: _Ctx()
+    if not hasattr(stub, "cache_resource"):
+        stub.cache_resource = _decorator
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_ensure_streamlit_stub()
+
+import streamlit as st  # noqa: E402
+
+from src.ui import app  # noqa: E402
+
+
+# ----------------------------------------------------- max_history_messages --
+def test_get_max_history_messages_defaults_to_six() -> None:
+    assert app.get_max_history_messages({}) == 6
+    assert app.get_max_history_messages({"ui": {}}) == 6
+
+
+def test_get_max_history_messages_reads_config() -> None:
+    assert app.get_max_history_messages({"ui": {"max_history_messages": 4}}) == 4
+    assert app.get_max_history_messages({"ui": {"max_history_messages": 0}}) == 0
+
+
+def test_get_max_history_messages_clamps_negative_and_malformed() -> None:
+    assert app.get_max_history_messages({"ui": {"max_history_messages": -3}}) == 0
+    assert app.get_max_history_messages({"ui": {"max_history_messages": "n/a"}}) == 6
+    assert app.get_max_history_messages({"ui": "not-a-dict"}) == 6
+
+
+def test_get_max_history_messages_reads_default_from_llm_config() -> None:
+    """The shipped `configs/llm_config.yaml` must define `ui.max_history_messages = 6`."""
+    config = app.load_llm_config()
+    assert config.get("ui", {}).get("max_history_messages") == 6
+    assert app.get_max_history_messages(config) == 6
+
+
+# ---------------------------------------------------------------- trim_history --
+def test_trim_history_keeps_last_n_messages() -> None:
+    msgs = [{"role": "user", "content": str(i)} for i in range(10)]
+    trimmed = app.trim_history(msgs, 6)
+    assert len(trimmed) == 6
+    assert [m["content"] for m in trimmed] == ["4", "5", "6", "7", "8", "9"]
+
+
+def test_trim_history_is_noop_when_small() -> None:
+    msgs = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+    assert app.trim_history(msgs, 6) == msgs
+
+
+def test_trim_history_zero_or_negative_returns_empty() -> None:
+    msgs = [{"role": "user", "content": "a"}]
+    assert app.trim_history(msgs, 0) == []
+    assert app.trim_history(msgs, -1) == []
+
+
+def test_trim_history_does_not_mutate_input() -> None:
+    msgs = [{"role": "user", "content": str(i)} for i in range(8)]
+    snapshot = list(msgs)
+    app.trim_history(msgs, 3)
+    assert msgs == snapshot
+
+
+# --------------------------------------------------------------- format_history --
+def test_format_history_uses_russian_role_labels() -> None:
+    rendered = app.format_history(
+        [
+            {"role": "user", "content": "Что такое SIP trunk?"},
+            {"role": "assistant", "content": "Это виртуальный канал…"},
+        ]
+    )
+    assert rendered == (
+        "Пользователь: Что такое SIP trunk?\n"
+        "Ассистент: Это виртуальный канал…"
+    )
+
+
+def test_format_history_skips_empty_messages() -> None:
+    rendered = app.format_history(
+        [
+            {"role": "user", "content": "   "},
+            {"role": "assistant", "content": "Ответ"},
+            {"role": "user", "content": ""},
+        ]
+    )
+    assert rendered == "Ассистент: Ответ"
+
+
+def test_format_history_handles_unknown_role() -> None:
+    rendered = app.format_history([{"role": "system", "content": "ping"}])
+    # Unknown roles default to «Пользователь» so the LLM still sees the line
+    # — better than dropping it silently.
+    assert rendered == "Пользователь: ping"
+
+
+# -------------------------------------------------------------- build_user_prompt --
+def _sample_chunks() -> list:
+    return [
+        {"source": "doc.pdf", "text": "Контент 1", "chunk_idx": 0},
+        {"source": "doc.pdf", "text": "Контент 2", "chunk_idx": 1},
+    ]
+
+
+def test_build_user_prompt_omits_history_block_in_stateless_mode() -> None:
+    prompt = app.build_user_prompt("Что такое X?", _sample_chunks())
+    assert "<history>" not in prompt
+    assert "<context>" in prompt
+    assert "<question>Что такое X?</question>" in prompt
+
+
+def test_build_user_prompt_omits_history_block_when_history_empty() -> None:
+    prompt = app.build_user_prompt("Q", _sample_chunks(), history=[])
+    assert "<history>" not in prompt
+
+
+def test_build_user_prompt_injects_history_when_provided() -> None:
+    history = [
+        {"role": "user", "content": "Привет"},
+        {"role": "assistant", "content": "Здравствуйте!"},
+    ]
+    prompt = app.build_user_prompt("Что дальше?", _sample_chunks(), history=history)
+    assert "<history>" in prompt
+    assert "Пользователь: Привет" in prompt
+    assert "Ассистент: Здравствуйте!" in prompt
+    # Order matters: context → history → question.
+    assert prompt.index("<context>") < prompt.index("<history>") < prompt.index("<question>")
+
+
+# ----------------------------------------------------- estimate_token_count --
+def test_estimate_token_count_is_proportional_to_length() -> None:
+    assert app.estimate_token_count("") == 0
+    short = app.estimate_token_count("abcd")
+    long = app.estimate_token_count("abcd" * 100)
+    assert short >= 1
+    assert long > short
+    assert long == len("abcd" * 100) // app.TOKEN_CHAR_RATIO
+
+
+# ------------------------------------------------------- mode-switch reset --
+def test_ensure_mode_state_resets_history_on_switch() -> None:
+    st.session_state.clear()
+    st.session_state["messages"] = [{"role": "user", "content": "prev"}]
+    st.session_state["ui_mode"] = app.MODE_CONSULTATION
+
+    app._ensure_mode_state(app.MODE_STATELESS)
+    assert st.session_state["ui_mode"] == app.MODE_STATELESS
+    assert st.session_state["messages"] == []
+
+
+def test_ensure_mode_state_keeps_history_when_mode_unchanged() -> None:
+    st.session_state.clear()
+    st.session_state["messages"] = [{"role": "user", "content": "keep"}]
+    st.session_state["ui_mode"] = app.MODE_CONSULTATION
+
+    app._ensure_mode_state(app.MODE_CONSULTATION)
+    assert st.session_state["messages"] == [{"role": "user", "content": "keep"}]
+
+
+def test_ensure_mode_state_initialises_messages_when_missing() -> None:
+    st.session_state.clear()
+    app._ensure_mode_state(app.MODE_CONSULTATION)
+    assert st.session_state["messages"] == []
+    assert st.session_state["ui_mode"] == app.MODE_CONSULTATION
+
+
+def test_reset_history_clears_buffer() -> None:
+    st.session_state.clear()
+    st.session_state["messages"] = [{"role": "user", "content": "a"}]
+    app._reset_history()
+    assert st.session_state["messages"] == []
+
+
+# ---------------------------------------------------------- mode constants --
+def test_mode_constants_match_issue_spec() -> None:
+    """Sidebar labels must match the issue verbatim (emoji included)."""
+    assert app.MODE_LABELS[app.MODE_STATELESS] == "📊 Анализ ТЗ"
+    assert app.MODE_LABELS[app.MODE_CONSULTATION] == "💬 Консультация по документации"
+    assert app.MODE_ORDER == [app.MODE_STATELESS, app.MODE_CONSULTATION]
+    assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
