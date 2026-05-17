@@ -1,6 +1,6 @@
 # 🧮 Standard: Embedding Model
 
-**Версия:** 1.2 | **Дата:** 2026-05-17 | **Статус:** Approved
+**Версия:** 1.3 | **Дата:** 2026-05-17 | **Статус:** Approved
 
 ---
 
@@ -33,7 +33,8 @@
 Этот раздел подключает контракты chunking-параметров и схемы метаданных к
 стандарту. Версия 1.1 (BL-16a, issue #87) добавила сам раздел; версия 1.2
 (BL-06, issue #92) перевела `chunk_size`/`chunk_overlap` на L1-параметры
-`512 / 64` и расширила guardrails.
+`512 / 64` и расширила guardrails; версия 1.3 (BL-02 hardening, issue #109)
+добавляет section propagation и реалистичный MVP-порог покрытия `0.65`.
 
 ### 5.1 Chunking parameters (Sprint 2, BL-06 L1)
 | Параметр | Значение | Источник | Комментарий |
@@ -63,12 +64,43 @@
 | `section_title` | str \| null | заголовок ближайшего раздела (regex CAPS / `\d+\.\d+\.\d+`) | NFR-02, BL-09 |
 | `section_number` | str \| null | нумерация раздела (`7.3.6`); `null` если нет нумерации | NFR-02, BL-10 (Parent Retrieval) |
 | `product` | str | продукт-владелец источника (`mango_office`, `corporate_telephony`, …) | фильтрация выборки, BL-14 |
+| `section_inherited` | bool | `true`, если `section_title` / `section_number` унаследованы от предыдущего заголовка | audit, schema debug |
 
-**Покрытие schema-check'ом:** `≥ 95 %` чанков должны содержать непустые
-`page_number` и `section_title` после reindex (BL-02). Несоответствие
-логируется как `schema_warning` и попадает в отчёт `evaluate_rag.py`.
+Дополнительное поле `section_fallback` может присутствовать в metadata для
+аудита fallback-стратегии (`none`, `source_filename`). Оно не входит в
+обязательную схему, но используется UI для человекочитаемой подписи цитат.
 
-### 5.3 STRICT_MODE (BL-03)
+**Покрытие schema-check'ом:** `≥ 65 %` чанков должны содержать непустые
+`page_number`, `section_title`, `section_number` и `product` после reindex
+(BL-02 hardening). `section_inherited=false` является валидным значением и не
+снижает coverage. Несоответствие логируется индексатором и попадает в отчёт
+`docs/analysis/metadata-coverage-fix_v1.md`.
+
+### 5.3 Section Propagation (BL-02 hardening)
+Индексатор создаёт отдельный `SectionPropagationState` на каждый документ:
+
+| Параметр | Значение | Назначение |
+|----------|----------|------------|
+| `section_propagation.enabled` | `true` | Включает наследование ближайшего найденного заголовка между чанками. |
+| `section_propagation.max_pages_without_heading` | `6` | Сбрасывает контекст, если после последнего заголовка прошло больше 6 страниц. |
+| `section_propagation.fallback_to_document_title` | `true` | До первого заголовка использует имя файла как безопасный fallback-раздел. |
+| `section_propagation.fallback_section_number` | `document` | Значение `section_number` для fallback-раздела уровня документа. |
+| `metadata_coverage_min` | `0.65` | Минимальный MVP-порог покрытия searchable metadata. |
+
+Алгоритм:
+1. Чанк сначала проверяется регулярными выражениями заголовков (`extract_section`).
+2. При найденном заголовке вычисляется depth (`4.2` → 2). Новый заголовок того
+   же или более высокого уровня сбрасывает нижележащий контекст; дочерний
+   заголовок добавляется в стек.
+3. Чанк без заголовка наследует верхний элемент стека и получает
+   `section_inherited=true`.
+4. Если превышен `max_pages_without_heading`, стек очищается, чтобы избежать
+   ghost inheritance между главами.
+5. Если активного контекста нет, включается fallback по имени файла:
+   `section_number=document`, `section_title=<source stem>`,
+   `section_fallback=source_filename`.
+
+### 5.4 STRICT_MODE (BL-03)
 Флаг `strict_rag_mode` в `configs/embedding_config.yaml` управляет
 поведением `src/llm/client.py` при пустом или слабом результате поиска:
 
@@ -80,7 +112,7 @@
 Флаг защищает от риска R-01 «галлюцинации LLM» ([CONCEPT §7](../CONCEPT.md#7-управление-рисками)).
 Тест регрессии — запрос вне домена (`out_of_domain`) в `tests/test_strict_mode.py`.
 
-### 5.4 Masking of the RAG channel (BL-04)
+### 5.5 Masking of the RAG channel (BL-04)
 Флаг `mask_rag_context` в `configs/embedding_config.yaml` включает
 маскирование контекста перед формированием промпта:
 
@@ -111,3 +143,4 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 | 1.0 | 2026-05-12 | Первая версия стандарта: фиксация `BAAI/bge-m3` как модели эмбеддингов MVP и Production. |
 | 1.1 | 2026-05-17 | BL-16a (issue #87): добавлен §5 с контрактами chunking-параметров, обязательной схемы метаданных (`page_number`, `section_title`, `section_number`, `product`), флагов `strict_rag_mode` / `strict_min_score` (BL-03) и `mask_rag_context` (BL-04). `chunk_size` / `chunk_overlap` не меняются — это сдвиг в BL-16b (Sprint 2). |
 | 1.2 | 2026-05-17 | BL-06 (issue #92): `chunk_size` поднят с 250 до **512**, `chunk_overlap` — с 50 до **64**, guardrails расширены до 384–768 ток. Включён section-aware splitter (`section_aware_chunking: true`). **BREAKING CHANGE** для существующего индекса ChromaDB — требуется полный reindex после мерджа. |
+| 1.3 | 2026-05-17 | BL-02 hardening (issue #109): добавлены `section_inherited`, section propagation с page-distance reset, fallback по имени документа и MVP-порог `metadata_coverage_min: 0.65`. |

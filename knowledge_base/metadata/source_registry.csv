@@ -1,4 +1,15 @@
 filename,version,sha256_hash,indexed_date,status,coverage
-functional_list_sample.xlsx,1.0,pending,2024-05-12,Active,High
+Click2call_Chrome_UserManual_1_0.pdf,1.0,14d0eb52beaf795f45bbf1aaaebabcd813302c394bb0277081c67a773bb58956,2026-05-17,Indexed,
+LK_manual_v-119_compressed.pdf,1.0,80d6f4192849d174ec74fa23ef2d77ae0ed4d06af8e3f9c981349f5055931f75,2026-05-17,Indexed,
+MANGO_OFFICE_LK_VATS_Auth_SSO.pdf,1.0,d103d572a213756256c52bfe33a4de6417c37eac51c3a26ace794c8fe61ac1f6,2026-05-17,Indexed,
+MangoOffice_VPBX_API_v1.9.pdf,1.0,6beabf643a8e4e0f48150098055cefa93ed60c242847f39fab6d136a1bc58ae4,2026-05-17,Indexed,
+QM_manual_v-1.26.08_compressed.pdf,1.0,d5ab7c1cda95b74d913a929078eb21d8b0e8ab809929dd8027ffed42bcbc2050,2026-05-17,Indexed,
+RECHEVAYA-ANALITIKA_1.26.18.pdf,1.0,a4dcab672d3246238fa5b47da4115c27e516f70e6d6ab57c0e33f4b5f12a2b89,2026-05-17,Indexed,
+RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf,1.0,c1f7ac1fb3fbbd5aaf1f2834a9d110872f63c8f42a61d1282f40446d196e3055,2026-05-17,Indexed,
+RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf,1.0,f0319cf0c0da77db3ec798d79f2a6d2c9d6f59f141c5768c6204357e3d50262a,2026-05-17,Indexed,
+RECHEVAYA-ANALITIKA_c-KATS_v.1.26.18.pdf,1.0,c1e7ea9d4b293a1872e50bbdcb7459c9d3936b3d030d80d0116180e155f9648c,2026-05-17,Indexed,
+Rolevaya-model-VATS_1_26_08.pdf,1.0,49751583633a9d6a3326b7a68ffc9444ddaa4b56ac90f59c09632a3a567e7736,2026-05-17,Indexed,
+SIP_trunk-1.23.43.pdf,1.0,9eb95a0259415f8eae80082d1af890f96c75d412a8625f3dab5f184e83d2d11b,2026-05-17,Indexed,
 api_guide_excerpt.pdf,1.0,pending,2024-05-12,Active,Medium
+functional_list_sample.xlsx,1.0,pending,2024-05-12,Active,High
 user_guide_call_recording.pdf,1.0,pending,2024-05-12,Active,High

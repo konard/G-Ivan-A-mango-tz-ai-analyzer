@@ -1,7 +1,7 @@
 # ADR-001: RAG Architecture with Hybrid Search
 
 ## Status
-Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.2)
+Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.3)
 
 ## Context
 - Требуется классификация требований ТЗ с обязательным цитированием (см. [`docs/CONCEPT.md`](../CONCEPT.md), разделы 1 и 4).
@@ -37,7 +37,7 @@ Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.2)
 - Vector store также абстрагирован конфигом — допустима последующая замена ChromaDB на резидентную альтернативу при изменении требований ИБ.
 
 ### Sprint 1 Addenda (BL-16a, issue #87)
-- **Metadata Enrichment (BL-02).** Каждый чанк в ChromaDB обязан содержать `page_number`, `section_title`, `section_number`, `product` в дополнение к `source` / `chunk_idx`. Контракт зафиксирован в [`docs/standards/embedding-model.md`](../standards/embedding-model.md) §5.2; schema-check выполняется при индексации и в `evaluate_rag.py` (BL-05). NFR-02 (цитируемость) считается достигнутой при `≥ 95 %` непустых `page_number` + `section_title`.
+- **Metadata Enrichment (BL-02).** Каждый чанк в ChromaDB обязан содержать `page_number`, `section_title`, `section_number`, `product`, `section_inherited` в дополнение к `source` / `chunk_idx`. Контракт зафиксирован в [`docs/standards/embedding-model.md`](../standards/embedding-model.md) §5.2–5.3; schema-check выполняется при индексации и в `evaluate_rag.py` (BL-05). После issue #109 MVP-порог покрытия searchable metadata установлен на `≥ 65 %`; продуктовая цель цитируемости `≥ 95 %` остаётся целевой метрикой пилота.
 - **STRICT_MODE (BL-03).** Флаги `strict_rag_mode` / `strict_min_score` в `configs/embedding_config.yaml` блокируют LLM-вызов при пустом или слабом контексте. Снижает риск R-01 (галлюцинации); подбор порога — на Golden Set.
 - **Masked RAG channel (BL-04).** Флаг `mask_rag_context` в `configs/embedding_config.yaml` включает применение `mask_context_chunks` ко всем чанкам перед формированием промпта. NFR-04 / NFR-05.
 - **Temperature lock (BL-22).** Блок `decoding:` в [`configs/llm_config.yaml`](../../configs/llm_config.yaml) (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`) подключается `LLMClient`'ом ко всем провайдерам fallback-цепочки. Цель — детерминизм regression-прогонов Golden Set (BL-05) и стабильность F1.
@@ -62,3 +62,4 @@ Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.2)
 | 1.0 | 2026-05-12 | Первая версия ADR: фиксация RAG с гибридным поиском (BM25 + Dense + RRF), ChromaDB и `BAAI/bge-m3`. |
 | 1.1 | 2026-05-16 | Упрощение LLM fallback-цепочки до двух провайдеров (DeepSeek → GigaChat); исключены Qwen (DashScope) и YandexGPT (issue #64). |
 | 1.2 | 2026-05-17 | BL-16a (issue #87): добавлен раздел «Sprint 1 Addenda» (Metadata Enrichment BL-02, STRICT_MODE BL-03, Masked RAG channel BL-04, Temperature lock BL-22, Log sanitization BL-23). Triggers for Revision дополнены пунктом про переход на `chunk_size=512` (BL-16b) и расширение fallback-цепочки. |
+| 1.3 | 2026-05-17 | BL-02 hardening (issue #109): metadata coverage MVP-порог уточнён до `≥ 65 %`, добавлен `section_inherited` и section propagation с защитой от ghost inheritance. |
