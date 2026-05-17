@@ -1,9 +1,9 @@
 # 📘 Концепция внедрения ИИ-анализатора тендерных ТЗ (MVP)
 
-**Версия:** 2.1 | **Дата:** 2026-05-15 | **Статус:** Approved for MVP
+**Версия:** 2.2 | **Дата:** 2026-05-17 | **Статус:** Approved for MVP
 **Владелец документа:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
 **Тип документа:** Single Source of Truth (SSoT)
-**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1)
+**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1), [issue #77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77) (v2.2)
 
 > Документ соответствует стандартам ISO/IEC 29148 (требования), ISO/IEC 42001 (управление ИИ), ISO/IEC 23894 (риски ИИ), NIST AI RMF и BABOK v3. Изменения вносятся через Pull Request с обязательным согласованием Product Owner.
 
@@ -345,6 +345,24 @@
 - [ ] CI-pipeline зелёный на каждом PR в `main`.
 - [ ] Все рекомендации MUST/SHOULD из [`docs/audit/2026-05-12_repository-consistency_audit_v1.md`](audit/2026-05-12_repository-consistency_audit_v1.md), раздел 7, выполнены.
 
+**Стратегический вектор Pilot → Enterprise (для информации, не входит в Exit Criteria MVP):**
+
+После прохождения Exit Criteria Пилота открывается направление мультиагентной
+оркестрации, обогащения KB и анализа рыночного спроса по корпусу ТЗ.
+Контекст и контракты зафиксированы черновиком в
+[`docs/ADR/003-multi-agent-orchestration-draft.md`](ADR/003-multi-agent-orchestration-draft.md)
+(Status: Concept). Запуск работ по ADR-003 требует одновременного выполнения
+триггеров:
+
+- F1 ≥ 0.85 на Golden Set (NFR-01) и цитируемость ≥ 95 % (NFR-02),
+- Готовность веб-шлюза вместо локального Streamlit (§8.1.3),
+- Согласование бюджета на отдельный оркестратор / offline-агенты,
+- Явное утверждение Product Owner через PR с переводом ADR-003 в `Proposed`.
+
+До прохождения триггеров текущий бэклог P0–P2 (см.
+[`docs/backlog/2026-05-17_backlog_rag-optimization_v1.md`](backlog/2026-05-17_backlog_rag-optimization_v1.md))
+сохраняет приоритет; кодовые изменения по ADR-003 не выполняются.
+
 #### 8.1.3. Масштабирование (6–8 недель)
 **Цель:** Production-готовая система для 50–200 пользователей.
 
@@ -421,6 +439,7 @@
 ### Архитектура
 - [ADR-001: RAG Architecture with Hybrid Search](ADR/001-rag-architecture.md)
 - [ADR-002: Export schema extension (Post-Pilot)](ADR/002-export-schema-extension.md)
+- [ADR-003 (Concept): Multi-agent orchestration & market-analysis](ADR/003-multi-agent-orchestration-draft.md) — стратегический черновик, статус Concept; запускается после прохождения триггеров §8.1.2.
 
 ### Стандарты
 - [Roles & Responsibilities (RACI)](standards/roles.md)
@@ -436,6 +455,10 @@
 - [MVP context review (2026-05-12)](analysis/2026-05-12_review_mvp-context_v1.md)
 - [Next docs-implementation task (2026-05-13)](analysis/2026-05-13_analysis_next-docs-implementation-task_v1.md)
 - [Repo state & MVP recommendations (2026-05-15)](analysis/2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md)
+- [RAG Pipeline Analysis & Optimization Roadmap (2026-05-16)](RAG_OPTIMIZATION_ANALYSIS.md)
+
+### Бэклоги
+- [RAG-optimization backlog v1 (2026-05-17, Draft → Review)](backlog/2026-05-17_backlog_rag-optimization_v1.md)
 
 ### Runbooks
 - [Runbooks placeholder (наполнение с этапа Пилот)](runbooks/)
@@ -454,3 +477,4 @@
 | 1.0 | 2024-05-12 | Product Owner | Первая редакция: сокращённый вариант концепции (разделы 1–8). |
 | 2.0 | 2026-05-15 | Code Agent (по issue [#37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37)) | Развёрнутая версия SSoT: согласованная структура документации (раздел 3), детализированные FR-01..FR-08 с критериями приёмки (раздел 4), полный набор НФТ NFR-01..NFR-09 (раздел 5), архитектура с ссылкой на ADR-001 (раздел 6), расширенная матрица рисков R-01..R-09 (раздел 7), Exit Criteria для MVP / Пилота / Масштабирования (раздел 8), глоссарий, открытые вопросы, реестр связанных документов. |
 | 2.1 | 2026-05-15 | Code Agent (по issue [#43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43)) | Финализация scope MVP: (1) FR-06 — минимальный набор экспортируемых колонок `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и пояснение порогов Confidence; расширенная схема вынесена в ADR-002 пост-пилот; (2) FR-07 — вкладка «Концепция и БЗ» заменена на «Справка для БА»; убран динамический рендеринг `CONCEPT.md`; добавлены счётчик `Успешно / Ошибки` и кнопка «Повторить только ошибки»; (3) новый раздел 6.7 — обработка ошибок LLM (экспоненциальный backoff `5с → 15с → 45с`, fallback по цепочке, статус `[Ошибка]`, продолжение пайплайна без аварийного останова, полная трассировка по `RunID`); (4) раздел 2.3 — зафиксирован HiL UX MVP = `read-only review` и KB Source MVP = ручная загрузка Git/Cloud; (5) раздел 10 — закрыты все 7 открытых вопросов с обоснованиями и ссылками. |
+| 2.2 | 2026-05-17 | Code Agent (по issue [#77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77)) | Раздел 8.1.2 расширен подразделом «Стратегический вектор Pilot → Enterprise» со ссылкой на [ADR-003 (Concept)](ADR/003-multi-agent-orchestration-draft.md) и триггерами перехода к мультиагентной схеме (F1 ≥ 0.85, цитируемость ≥ 95 %, веб-шлюз, утверждение PO). В разделе 11 «Связанные документы» добавлены ADR-003, RAG_OPTIMIZATION_ANALYSIS.md и новый каталог `docs/backlog/` с бэклогом v1 (Draft → Review). Кодовых изменений нет; модификации `configs/`, `src/` и параметров чанкинга не выполняются до статуса бэклога `Accepted`. |
