@@ -2,7 +2,7 @@
 
 Pins the contract of the citation helpers in :mod:`src.ui.app`:
 
-* ``build_citation_link`` formats ``[source.pdf, стр. N](file:///abs/path#page=N)``
+* ``build_citation_link`` formats ``[source.pdf, стр. N](http://.../source.pdf#page=N)``
   and gracefully degrades when the page number is missing.
 * ``_first_page_per_source`` picks the page from the highest-ranked chunk
   and ignores duplicates further down the result list.
@@ -90,24 +90,29 @@ def test_build_citation_link_includes_page_anchor(tmp_path: Path) -> None:
     sources.mkdir()
     (sources / "SIP_trunk-1.23.43.pdf").write_bytes(b"%PDF")
     link = app.build_citation_link(
-        "SIP_trunk-1.23.43.pdf", 7, sources_dir=sources
+        "SIP_trunk-1.23.43.pdf",
+        7,
+        base_url="http://localhost:8000/docs",
     )
-    abs_path = (sources / "SIP_trunk-1.23.43.pdf").resolve()
-    assert link == f"[SIP_trunk-1.23.43.pdf, стр. 7](file://{abs_path}#page=7)"
+    assert link == (
+        "[SIP_trunk-1.23.43.pdf, стр. 7]"
+        "(http://localhost:8000/docs/SIP_trunk-1.23.43.pdf#page=7)"
+    )
 
 
 def test_build_citation_link_falls_back_without_page(tmp_path: Path) -> None:
     sources = tmp_path / "sources"
     sources.mkdir()
-    link = app.build_citation_link("doc.pdf", None, sources_dir=sources)
-    abs_path = (sources / "doc.pdf").resolve()
-    assert link == f"[doc.pdf](file://{abs_path})"
+    link = app.build_citation_link(
+        "doc.pdf", None, base_url="http://localhost:8000/docs/"
+    )
+    assert link == "[doc.pdf](http://localhost:8000/docs/doc.pdf)"
 
 
 def test_build_citation_link_ignores_non_positive_page(tmp_path: Path) -> None:
-    link = app.build_citation_link("doc.pdf", 0, sources_dir=tmp_path)
+    link = app.build_citation_link("doc.pdf", 0)
     assert "#page=" not in link
-    link = app.build_citation_link("doc.pdf", "abc", sources_dir=tmp_path)
+    link = app.build_citation_link("doc.pdf", "abc")
     assert "#page=" not in link
 
 
@@ -132,15 +137,19 @@ def test_linkify_citations_rewrites_only_known_sources(tmp_path: Path) -> None:
         "Настройте транк, как описано в [SIP_trunk-1.23.43.pdf]. "
         "Сценарий из [unknown.pdf] недоступен."
     )
-    rewritten = app.linkify_citations(answer, chunks, sources_dir=sources)
-    abs_path = (sources / "SIP_trunk-1.23.43.pdf").resolve()
+    rewritten = app.linkify_citations(
+        answer,
+        chunks,
+        base_url="http://localhost:8000/docs",
+    )
     expected_link = (
-        f"[SIP_trunk-1.23.43.pdf, стр. 12](file://{abs_path}#page=12)"
+        "[SIP_trunk-1.23.43.pdf, стр. 12]"
+        "(http://localhost:8000/docs/SIP_trunk-1.23.43.pdf#page=12)"
     )
     assert expected_link in rewritten
     # Unknown source MUST be left untouched (the UI never invents links).
     assert "[unknown.pdf]" in rewritten
-    assert "(file://" + str(sources / "unknown.pdf") not in rewritten
+    assert "(http://localhost:8000/docs/unknown.pdf" not in rewritten
 
 
 def test_linkify_citations_includes_section_fallback_signature(tmp_path: Path) -> None:
@@ -156,7 +165,11 @@ def test_linkify_citations_includes_section_fallback_signature(tmp_path: Path) -
         },
     ]
 
-    rewritten = app.linkify_citations("См. [doc.pdf].", chunks, sources_dir=tmp_path)
+    rewritten = app.linkify_citations(
+        "См. [doc.pdf].",
+        chunks,
+        base_url="http://localhost:8000/docs",
+    )
 
     assert "doc.pdf, стр. 2, раздел: MANGO OFFICE LK VATS Auth SSO" in rewritten
     assert "#page=2" in rewritten
@@ -166,14 +179,17 @@ def test_linkify_citations_leaves_existing_markdown_links_alone(tmp_path: Path) 
     chunks = [{"source": "doc.pdf", "metadata": {"page_number": 4}}]
     answer = "См. [doc.pdf](https://example.com/doc.pdf)."
     assert (
-        app.linkify_citations(answer, chunks, sources_dir=tmp_path)
+        app.linkify_citations(answer, chunks)
         == "См. [doc.pdf](https://example.com/doc.pdf)."
     )
 
 
 def test_linkify_citations_returns_input_when_no_chunks(tmp_path: Path) -> None:
-    assert (
-        app.linkify_citations("[doc.pdf] is the source.", [], sources_dir=tmp_path)
-        == "[doc.pdf] is the source."
-    )
-    assert app.linkify_citations("", [{"source": "a.pdf"}], sources_dir=tmp_path) == ""
+    assert app.linkify_citations("[doc.pdf] is the source.", []) == "[doc.pdf] is the source."
+    assert app.linkify_citations("", [{"source": "a.pdf"}]) == ""
+
+
+def test_ui_config_contains_citation_settings() -> None:
+    cfg = app.get_citations_config()
+    assert cfg["base_url"] == "http://localhost:8000/docs"
+    assert cfg["source_dir"].name == "sources"
