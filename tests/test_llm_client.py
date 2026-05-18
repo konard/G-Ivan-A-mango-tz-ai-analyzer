@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 
@@ -8,10 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.llm.client import (  # noqa: E402
     BACKOFF_SCHEDULE_SECONDS,
+    DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     LLMClient,
     LLMError,
     RetriableProviderError,
     _backoff_delay,
+    _resolve_ollama_config,
     mask_text,
 )
 
@@ -323,3 +326,57 @@ def test_retriable_failure_uses_backoff_schedule(monkeypatch) -> None:
     assert attempts["n"] == 3
     # Waits should be the first two entries of the schedule, in order.
     assert sleeps == [5, 15]
+
+
+def test_ollama_config_loading(monkeypatch) -> None:
+    """Ollama provider reads model/base_url/timeout/options from YAML + env."""
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b-instruct-q4_K_M")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.internal:11434")
+    monkeypatch.setenv("OLLAMA_TIMEOUT", "240")
+
+    config: Dict[str, Any] = {
+        "model": "${OLLAMA_MODEL:qwen2.5:7b-instruct-q4_K_M}",
+        "base_url": "${OLLAMA_BASE_URL:http://localhost:11434}",
+        "timeout_seconds": "${OLLAMA_TIMEOUT:180}",
+        "retry_attempts": 2,
+        "options": {
+            "num_ctx": 4096,
+            "num_thread": 0,
+            "keep_alive": "10m",
+            "temperature": 0.1,
+        },
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "seed": 42,
+        "max_tokens": 1024,
+    }
+
+    resolved = _resolve_ollama_config(config)
+
+    assert resolved["model"] == "llama3.1:8b-instruct-q4_K_M"
+    assert resolved["base_url"] == "http://ollama.internal:11434"
+    assert resolved["timeout_seconds"] == 240
+    assert resolved["retry_attempts"] == 2
+    assert resolved["options"] == {
+        "num_ctx": 4096,
+        "num_thread": 0,
+        "keep_alive": "10m",
+        "temperature": 0.1,
+    }
+    assert resolved["temperature"] == 0.1
+    assert resolved["top_p"] == 0.9
+    assert resolved["seed"] == 42
+    assert resolved["max_tokens"] == 1024
+
+
+def test_ollama_config_defaults_are_cpu_safe(monkeypatch) -> None:
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
+
+    resolved = _resolve_ollama_config({})
+
+    assert resolved["base_url"] == "http://localhost:11434"
+    assert resolved["model"]
+    assert resolved["timeout_seconds"] == DEFAULT_OLLAMA_TIMEOUT_SECONDS
+    assert resolved["timeout_seconds"] >= 120

@@ -59,7 +59,21 @@ providers:
     allowed_for_production: true  # paid final reserve
     retry_attempts: 3
 
+  ollama:
+    enabled: true
+    priority: 4
+    model: "${OLLAMA_MODEL:qwen2.5:7b-instruct-q4_K_M}"
+    base_url: "${OLLAMA_BASE_URL:http://localhost:11434}"
+    timeout_seconds: "${OLLAMA_TIMEOUT:180}"
+    retry_attempts: 2
+    options:
+      num_ctx: 4096
+      num_thread: 0
+      keep_alive: "10m"
+      temperature: 0.1
+
 fallback_providers:
   - "openrouter"
   - "gigachat"
   - "deepseek"
+  - "ollama"

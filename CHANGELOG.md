@@ -11,6 +11,27 @@
   YAML/Markdown/Python text attributes are pinned to UTF-8/LF and regression
   tests verify config loaders read YAML with explicit `encoding="utf-8"` so
   Russian Windows `cp1251` locales do not trigger `UnicodeDecodeError`.
+### Added
+- **BL-12 (issue #124):** Query Expansion для режима «Консультация»:
+  `QueryExpansionRetriever` генерирует 3–4 семантические переформулировки
+  через `prompts/system_rag_query_expansion_v1.md`, выполняет retrieval по
+  вариантам запроса и объединяет хиты через RRF с дедупликацией. Флаги
+  `rag.query_expansion_enabled: false` и `rag.expansion_count: 3` добавлены
+  в `configs/embedding_config.yaml`; graceful fallback возвращает результаты
+  исходного запроса при сбое LLM или невалидном JSON.
+- **BL-25 (issue #122):** конфигурируемый блок `providers.ollama` в
+  `configs/llm_config.yaml` с `${OLLAMA_*:default}` placeholders для
+  `model`, `base_url`, `timeout_seconds` и локальными `options`
+  (`num_ctx`, `num_thread`, `keep_alive`, `temperature`). `LLMClient`
+  применяет YAML/env значения и централизованный `decoding:` к Ollama
+  RAG-вызовам; дефолтный timeout повышен до 180 секунд для CPU-only АРМ.
+  Документация обновлена в `README.md`, `.env.example` и
+  `docs/standards/llm-behavior.md`; регресс-тест —
+  `tests/test_llm_client.py::test_ollama_config_loading`.
+- **PATCH: dependency hardening (BL-24a, issue #120).** Добавлен
+  `torchvision>=0.18.0` в `requirements.txt`, чтобы optional vision-backends
+  из `transformers` не засоряли Streamlit-логи `ModuleNotFoundError` при
+  чистой установке зависимостей.
 
 ## [0.2.0] - 2026-05-18
 

@@ -71,7 +71,7 @@ decoding:
 | **GigaChat** (`GigaChat-Pro`) | Classification (FR-04) | **0.1** | **0.9** | **42**\* | **1024** | \*GigaChat не гарантирует детерминизм по `seed` — параметр передаётся, но воспроизводимость **best-effort**. |
 | **GigaChat** (`GigaChat-Pro`) | RAG free-text | **0.1** | **0.9** | **42**\* | **1024** | Тот же блок; формат ответа не ограничен JSON. |
 | **OpenRouter** (`deepseek/deepseek-r1:free`) | RAG free-text (fallback) | **0.1** | **0.9** | **42** | **1024** | OpenAI-compatible payload; `seed` пробрасывается, поддержка зависит от downstream-модели. |
-| **Ollama** (`qwen2.5:7b`, локально) | RAG free-text (local fallback) | **0.1** | **0.9** | **42** | **1024** | Для локальной воспроизводимости `seed` рекомендуется задавать всегда. |
+| **Ollama** (`qwen2.5:7b-instruct-q4_K_M`, локально) | RAG free-text (local fallback) | **0.1** | **0.9** | **42** | **1024** | Конфигурируется через `providers.ollama` + `OLLAMA_*`; `timeout_seconds` по умолчанию **180** для CPU-only АРМ, `options.num_ctx=4096`, `keep_alive=10m`. |
 | **stub** | offline-тесты | n/a | n/a | n/a | n/a | Ответ детерминирован in-code; параметры декодирования не передаются. |
 
 **Допустимый коридор для Пилота (без ADR):**

@@ -31,6 +31,13 @@ rrf_k: 60
 use_parent_context: false
 parent_context_max_chars: 6000
 
+# --- Query Expansion (BL-12) -------------------------------------------------
+# Disabled by default. The UI enables this only in "Консультация" mode so
+# batch "Анализ ТЗ" keeps its existing latency and token-cost profile.
+rag:
+  query_expansion_enabled: false
+  expansion_count: 3
+
 # --- STRICT_MODE (BL-03, BL-16a, CONCEPT §7 R-01) -----------------------------
 # When `strict_rag_mode: true`, the LLM call is skipped if the retriever
 # returns no chunks OR if the top score is below `strict_min_score`. The

@@ -1,3 +1,6 @@
+ui:
+  debug_error_details: false
+
 citations:
   base_url: "http://localhost:8000/docs"
   # base_url: "https://kb.mango-office.ru/docs"
