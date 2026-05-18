@@ -267,17 +267,20 @@ def get_rag_reflection_prompt() -> str:
 
 # ----------------------------------------------------------------- retrieval --
 def search_vector_store(
+    query: str,
+    top_k: int,
     ui_mode: str = MODE_STATELESS,
     llm_config: Optional[Dict[str, Any]] = None,
     enable_query_expansion: bool = False,
+    use_parent_context: bool = False,
 ) -> List[Dict[str, Any]]:
     """Run a vector search and return chunk dicts ordered by similarity."""
 
     # --- Imports ---
-    from src.rag.retriever import get_retriever
+    from src.rag.retriever import build_retriever
     
     # --- Base Retriever ---
-    base_retriever = get_retriever()
+    base_retriever = build_retriever()
     active_retriever = base_retriever
 
     # --- Layer 1: Multi-hop Retrieval (Inner Wrapper) ---
@@ -320,7 +323,6 @@ def search_vector_store(
 
     # --- Execution ---
     # Active retriever is now either Base, Iterative, or QueryExpansion(Iterative(Base))
-    return active_retriever.search()
     try:
         chunks = active_retriever.search(
             query,
@@ -331,11 +333,14 @@ def search_vector_store(
         raise KBError(f"ChromaDB query failed: {exc}") from exc
     if not chunks:
         raise KBError(
-            f"Collection '{retriever.collection_name}' at "
-            f"'{retriever.persist_directory}' returned no results. Make sure "
+            f"Collection '{base_retriever.collection_name}' at "
+            f"'{base_retriever.persist_directory}' returned no results. Make sure "
             "the index is built: `python knowledge_base/indexing/build_index.py`."
         )
     return chunks
+
+
+search_kb = search_vector_store
 
 
 # ------------------------------------------------------------- BL-09 citations --

@@ -167,6 +167,35 @@ def test_shipped_llm_config_multi_hop_defaults_to_disabled() -> None:
     assert settings["enabled"] is False
 
 
+def test_search_vector_store_passes_query_arguments(monkeypatch) -> None:
+    captured = {}
+    chunks = [{"source": "doc.md", "text": "context", "score": 1.0}]
+
+    class _Retriever:
+        collection_name = "kb"
+        persist_directory = "/tmp/chroma"
+        config = {"query_expansion": {"enabled": False}}
+
+        def search(self, query, *, top_k, use_parent_context=False):
+            captured["query"] = query
+            captured["top_k"] = top_k
+            captured["use_parent_context"] = use_parent_context
+            return chunks
+
+    monkeypatch.setattr("src.rag.retriever.build_retriever", lambda: _Retriever())
+
+    assert app.search_vector_store(
+        "Как настроить SIP?",
+        top_k=3,
+        use_parent_context=True,
+    ) == chunks
+    assert captured == {
+        "query": "Как настроить SIP?",
+        "top_k": 3,
+        "use_parent_context": True,
+    }
+
+
 # ---------------------------------------------------------------- trim_history --
 def test_trim_history_keeps_last_n_messages() -> None:
     msgs = [{"role": "user", "content": str(i)} for i in range(10)]
@@ -368,15 +397,13 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
         use_parent_context=False,
         ui_mode=app.MODE_STATELESS,
         llm_config=None,
+        enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
         captured["ui_mode"] = ui_mode
         captured["multi_hop"] = app.resolve_multi_hop_settings(
             llm_config or {}, ui_mode
         )["enabled"]
-        enable_query_expansion=False,
-    ):
-        captured["use_parent_context"] = use_parent_context
         captured["enable_query_expansion"] = enable_query_expansion
         return [{"source": "doc.md", "text": "context", "score": 1.0}]
 
@@ -408,11 +435,6 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
 
 
 def test_retrieve_and_answer_ignores_multi_hop_in_analysis_mode(monkeypatch) -> None:
-    assert captured["enable_query_expansion"] is True
-    assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
-
-
-def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch) -> None:
     captured = {}
 
     class _Client:
@@ -426,23 +448,13 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
         use_parent_context=False,
         ui_mode=app.MODE_STATELESS,
         llm_config=None,
+        enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
         captured["ui_mode"] = ui_mode
         captured["multi_hop"] = app.resolve_multi_hop_settings(
             llm_config or {}, ui_mode
         )["enabled"]
-        return [{"source": "doc.md", "text": "context", "score": 1.0}]
-
-    monkeypatch.setattr(app, "search_kb", _search)
-    monkeypatch.setattr(
-        app,
-        "load_llm_config",
-        lambda: {"rag": {"multi_hop_enabled": True}},
-    )
-        enable_query_expansion=False,
-    ):
-        captured["use_parent_context"] = use_parent_context
         captured["enable_query_expansion"] = enable_query_expansion
         return [{"source": "doc.md", "text": "context", "score": 1.0}]
 
