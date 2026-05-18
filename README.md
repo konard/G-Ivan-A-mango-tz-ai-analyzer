@@ -121,6 +121,19 @@ ollama pull qwen2.5:7b-instruct-q4_K_M
 CPU-only АРМ оставляйте `OLLAMA_TIMEOUT` не ниже 120 секунд; дефолт проекта
 равен 180 секундам.
 
+HTTP timeout можно задавать на уровне любого провайдера в
+`configs/llm_config.yaml` через `timeout` или `timeout_seconds`. Если параметр
+не указан, клиент читает переменные окружения в порядке `OLLAMA_TIMEOUT`,
+`PROVIDER_TIMEOUT`, `LLM_PROVIDER_TIMEOUT`, затем использует дефолт 30 секунд.
+
+```yaml
+providers:
+  openrouter:
+    timeout: "${PROVIDER_TIMEOUT:30}"
+  ollama:
+    timeout_seconds: "${OLLAMA_TIMEOUT:180}"
+```
+
 ### 3. Запуск
 ```bash
 # Индексация базы знаний (один раз)

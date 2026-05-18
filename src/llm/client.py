@@ -6,7 +6,7 @@ order (DeepSeek → GigaChat by default) and returns a validated JSON payload
 that matches the schema defined in ``prompts/system_classifier_v1.0.md``.
 
 Network policy (per ADR-001 and issues #39 / #45):
-- Per-call HTTP timeout: 30 seconds.
+- Per-call HTTP timeout: provider config/env override, 30 seconds by default.
 - Retry policy per provider: up to 3 attempts with a fixed exponential
   backoff schedule of **5s → 15s → 45s** for retriable errors (HTTP 5xx,
   HTTP 429, ``ConnectionError``, ``Timeout``). The schedule is the wait
@@ -249,14 +249,23 @@ def _resolve_int_config_value(value: Any, default: int) -> int:
         return default
 
 
+def _provider_timeout(config: Dict[str, Any], default: int) -> int:
+    """Resolve provider HTTP timeout from config, env, then default."""
+    for key in ("timeout", "timeout_seconds"):
+        if key in config:
+            return max(_resolve_int_config_value(config.get(key), default), 1)
+    for env_name in ("OLLAMA_TIMEOUT", "PROVIDER_TIMEOUT", "LLM_PROVIDER_TIMEOUT"):
+        value = os.environ.get(env_name)
+        if value:
+            return max(_resolve_int_config_value(value, default), 1)
+    return max(int(default), 1)
+
+
 def _resolve_ollama_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Return Ollama config with YAML/env placeholders and safe defaults applied."""
     model = _resolve_config_value(config.get("model"))
     base_url = _resolve_config_value(config.get("base_url"))
-    timeout = _resolve_int_config_value(
-        config.get("timeout_seconds"),
-        DEFAULT_OLLAMA_TIMEOUT_SECONDS,
-    )
+    timeout = _provider_timeout(config, DEFAULT_OLLAMA_TIMEOUT_SECONDS)
     options = config.get("options")
     resolved = dict(config)
     resolved["model"] = str(model or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL)
@@ -916,6 +925,7 @@ def _call_deepseek(system_prompt: str, user_message: str, config: Dict[str, Any]
         "https://api.deepseek.com/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json_payload=payload,
+        timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
     )
     return data["choices"][0]["message"]["content"]
 
@@ -938,7 +948,7 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             data={"scope": "GIGACHAT_API_PERS"},
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
         )
     except requests.exceptions.ConnectionError as exc:
         raise RetriableProviderError(f"GigaChat auth connection error: {exc}") from exc
@@ -962,6 +972,7 @@ def _call_gigachat(system_prompt: str, user_message: str, config: Dict[str, Any]
         "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
         json_payload=payload,
+        timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
     )
     return data["choices"][0]["message"]["content"]
 
@@ -1012,7 +1023,7 @@ def _gigachat_access_token(config: Dict[str, Any]) -> str:
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             data={"scope": scope},
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
             verify=verify_ssl,
         )
     except requests.exceptions.SSLError as exc:
@@ -1065,7 +1076,7 @@ def _call_gigachat_rag(system_prompt: str, user_message: str, config: Dict[str, 
                 "Content-Type": "application/json",
             },
             json=body,
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
             verify=verify_ssl,
         )
     except requests.exceptions.SSLError as exc:
@@ -1129,7 +1140,7 @@ def _call_openrouter_rag(system_prompt: str, user_message: str, config: Dict[str
             f"{base_url}/chat/completions",
             headers=headers,
             json=body,
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=_provider_timeout(config, HTTP_TIMEOUT_SECONDS),
         )
     except requests.exceptions.SSLError as exc:
         raise RuntimeError(f"OpenRouter SSL error: {exc}") from exc
