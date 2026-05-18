@@ -6,123 +6,58 @@
 
 ## [Unreleased]
 
-### ⚠️ BREAKING CHANGE
-- **BL-06 (issue #92): `chunk_size` поднят с 250 до 512, `chunk_overlap` — с 50 до 64.** Изменение размера окна меняет структуру индекса ChromaDB — после мерджа владелец задачи выполняет полный reindex (`python knowledge_base/indexing/build_index.py`) и прогоняет Golden Set (BL-05). Старая коллекция `clarify_engine_kb` несовместима с новыми параметрами; её необходимо пересоздать.
+(сюда будут идти следующие изменения)
+
+## [0.2.0] - 2026-05-18
+
+### ⚠️ BREAKING CHANGES
+- **BL-06** (#92): Переход на `chunk_size=512`, `chunk_overlap=64` и section-aware splitting. Требуется полная переиндексация базы знаний: удалить старую ChromaDB-коллекцию и выполнить `python knowledge_base/indexing/build_index.py`.
 
 ### Added
-- **MINOR: audit trail with run_id tracing & BL-04 compliance (BL-23, issue #103).**
-  `src/llm/client.py` creates a 12-hex per-request `run_id` for
-  `classify_requirement()` and `generate_rag_response()`, preserves it through
-  provider fallback via provider config, and emits masked structured
-  `LLM_REQUEST` / `LLM_RESPONSE` records with provider, decoding params,
-  prompt version/hash, response status, and latency. Logger failures are
-  best-effort and do not interrupt the main LLM request. ADR:
-  [`docs/ADR/005-audit-trail.md`](docs/ADR/005-audit-trail.md); tests:
-  `tests/test_audit_trail.py`.
-- **MINOR: graceful error handling & retry UX (BL-13, issue #106).**
-  KB-тестовый UI (`src/ui/app.py`) теперь обрабатывает сбои ретривера и LLM
-  без сырых traceback в интерфейсе: запрос сохраняется в
-  `st.session_state["last_query"]`, кнопка «Повторить» переиспользует это
-  значение, во время queued generation поля ввода блокируются, а ошибка
-  рендерится отдельным `st.error("Не удалось получить ответ.")` без
-  фейкового RAG-ответа. UI-логи `ui_prompt_built` /
-  `ui_generation_failed` несут `run_id`, `error_type`, `provider` и
-  изолированы `try/except`, чтобы сбой логирования не ронял Streamlit.
-  ADR — [`docs/ADR/007-error-handling.md`](docs/ADR/007-error-handling.md);
-  тесты — `tests/test_ui_error_handling.py`.
-- **MINOR: evaluation script for RAG metrics (BL-05, issue #105).**
-  `scripts/evaluate/evaluate_rag.py` reads the Golden Set from
-  `data/golden_set_v1.jsonl`, loads retrieval settings from
-  `configs/embedding_config.yaml`, computes Hit Rate@5 and MRR, and writes
-  `outputs/eval_report_v1.json`. The runner supports `--config` and emits a
-  clear error when the configured Chroma directory is missing. Metric formulas
-  are documented in `docs/standards/evaluation-metrics.md`.
-- **MINOR: clickable citation links with page anchors (BL-09.1, issue #104).**
-  `configs/ui_config.yaml` задаёт `citations.base_url` и `source_dir`,
-  `src/ui/app.py` строит Markdown-ссылки вида
-  `http://localhost:8000/docs/file.pdf#page=N`, а
-  `src/api/static_serve.py` добавляет безопасный FastAPI endpoint
-  `GET /docs/{filename}` с валидацией basename/path traversal и
-  `application/pdf`. ADR — [`docs/ADR/006-citation-links.md`](docs/ADR/006-citation-links.md);
-  тесты — `tests/test_citation_links.py`, `tests/test_static_serve.py`.
-- **MINOR: metadata inheritance & coverage improvement (BL-02 hardening, issue #109).**
-  `knowledge_base/indexing/build_index.py` добавляет per-document
-  `SectionPropagationState`: чанки без локального заголовка наследуют
-  ближайший `section_title` / `section_number`, получают audit-флаг
-  `section_inherited`, а после длинного разрыва по страницам контекст
-  сбрасывается для защиты от ghost inheritance. До первого заголовка
-  используется fallback по имени документа (`section_fallback=source_filename`),
-  чтобы UI-цитаты имели человекочитаемую подпись.
-- **BL-15 (issue #107):** контекстно-зависимый экспорт из KB UI:
-  `src/utils/export.py` генерирует `.xlsx` и `.md` в памяти через
-  `io.BytesIO`, `configs/export_config.yaml` задаёт строгий allow-list
-  Excel-колонок (`requirement_id`, `requirement_text`, `classification`,
-  `reasoning`, `citations`), а `src/ui/app.py` показывает кнопки
-  «📥 Скачать отчет (.xlsx)» для режима «Анализ ТЗ» и
-  «📥 Сохранить диалог (.md)» для режима «Консультация». Экспорт применяет
-  `mask_text()` ко всем строковым значениям и не включает служебные поля
-  вроде `raw` / `provider`. ADR — [`docs/ADR/008-data-export.md`](docs/ADR/008-data-export.md);
-  тесты — `tests/test_context_export.py`.
-- `docs/standards/llm-behavior.md` v1.0 — стандарт параметров декодирования LLM (BL-22, issue #101): канонический блок `decoding:` (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`), таблица рекомендуемых значений по провайдерам/режимам (DeepSeek, GigaChat, OpenRouter, Ollama), допустимый коридор изменений в Пилоте, обязательное аудит-логирование `decoding_lock applied`. Зарегистрирован в `docs/standards/README.md`.
-- **Prompt Library `prompts/` + `src/llm/prompt_loader.py` (BL-08, issue #94).**
-  Все системные и few-shot-промпты вынесены из `src/llm/client.py` и
-  `src/ui/app.py` в версионируемые файлы по конвенции
-  `<name>_v<MAJOR>.<MINOR>.<ext>`: `prompts/system_classifier_v1.0.md`,
-  `prompts/system_rag_v1.0.md`, `prompts/few_shot_examples_v1.0.json`.
-  Loader (`load_prompt`, `load_few_shot_examples`,
-  `load_prompt_from_path`) вычисляет SHA-256 содержимого и пишет
-  `INFO`-запись в JSON-лог с `prompt_name`, `prompt_version`,
-  `prompt_sha256`, `run_id` — audit-трасса BL-23. `LLMClient`
-  использует `load_prompt_from_path` через существующий
-  `DEFAULT_PROMPT_PATH`, публичные сигнатуры не меняются; `src/ui/app.py`
-  загружает `system_rag_v1.0.md` через `@st.cache_resource`. Архитектура
-  и DoD — [`docs/ADR/004-prompt-management.md`](docs/ADR/004-prompt-management.md);
-  изменения промптов — `prompts/prompt_changelog.md`; 16 unit-кейсов в
-  `tests/test_prompt_loader.py`.
-- **BL-07 (issue #93):** два режима работы KB-тестового UI (`src/ui/app.py`) — **«📊 Анализ ТЗ»** (полностью stateless, токен-cost совпадает с pre-BL-07 baseline) и **«💬 Консультация по документации»** (stateful чат, история ≤ `ui.max_history_messages` сообщений, по умолчанию 6). Переключатель режимов в `st.sidebar.radio`, кнопка «🧹 Очистить историю», автоматический сброс истории при смене режима (`_ensure_mode_state`), инлайн истории в `<history>`-блок промпта без изменения сигнатуры `LLMClient.generate_rag_response()`, JSON-лог `ui_prompt_built mode=… history_messages=… approx_tokens=…` на каждый вызов. Конфиг — `configs/llm_config.yaml` (`ui.max_history_messages`). ADR — [`docs/ADR/004-ui-operation-modes.md`](docs/ADR/004-ui-operation-modes.md); обновлён `docs/CONCEPT.md` §6.2 (компонент UI) и §6.8 (режимы работы UI). Регресс-тесты — `tests/test_ui_modes.py`.
-- `src/rag/chunker.py::split_sections` и флаг `section_aware_chunking` в `configs/embedding_config.yaml` — section-aware splitter режет текст по заголовкам (Markdown `#`, нумерованные разделы `\d+(\.\d+)+`, локализованные `Раздел N` / `Section N`, CAPS-блоки PDF) до применения token-окна; заголовок остаётся в первом чанке секции (BL-06, issue #92).
-- `tests/test_chunker.py` — unit-тесты L1-контракта: дефолты 512/64, guardrails 384–768, корректность section-aware разбиения и пропагация флагов из конфига (BL-06, issue #92).
-- `src/rag/retriever.py` — `HybridChromaRetriever.search()` теперь пишет INFO-лог `bm25_hits=… dense_hits=… fused=… rrf_k=60 top_k=…` на каждый запрос. Лог подтверждает, что в production-пути UI отрабатывает именно фьюжн BM25 + Dense + RRF, а не только векторный поиск (BL-01 DoD, issue #91).
-- `tests/test_hybrid_chroma_retriever.py::test_hybrid_chroma_search_logs_fusion_breakdown` — регресс-тест, проверяющий формат строки фьюжн-лога (issue #91).
-- `src/ui/app.py` — Streamlit UI для ручного тестирования RAG-пайплайна по базе знаний: поле запроса, кнопка «Search KB», вывод ответа LLM в Markdown, секция «Source Chunks» с именем файла, обрезанным текстом и similarity-скором; сайдбар с тоглом Debug Mode и выбором провайдера (DeepSeek / GigaChat). ChromaDB читается из `knowledge_base/vector_store/` (коллекция `clarify_engine_kb`), эмбеддер `BAAI/bge-m3`, конфиг провайдеров — `configs/llm_config.yaml`, секреты — `.env`. Запуск: `streamlit run src/ui/app.py` (issue #70).
-- `python-dotenv` в `requirements.txt` — необходим UI для чтения `.env`.
-- `.env.example` — шаблон переменных окружения с плейсхолдерами `DEEPSEEK_API_KEY`, `GIGACHAT_API_KEY` и флагами `USE_TEST_DATA_MODE`, `STRICT_EMBEDDER` (issue #59; `YANDEXGPT_API_KEY` исключён в issue #64).
-- `scripts/evaluate/evaluate_quality.py` — CLI для замера качества классификации (Macro-F1 и per-class P/R/F1) против `test_data/gold_standard.json`, поддерживает Excel и JSON-предсказания, JSON-логирование и опциональный детальный отчёт (issue #47, NFR-01).
-- `tests/test_quality.py` — smoke-тесты метрик, парсеров входных файлов и CLI evaluate_quality.
-- `docs/audit/2026-05-12_repository-consistency_audit_v1.md` — аудит согласованности репозитория, полноты документации и тестируемости требований (issue #21).
-- `docs/analysis/2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md` — анализ состояния репозитория, оценка готовности MVP, профиль нагрузки и рекомендации по доработке кода, архитектуры и документации (issue #35).
-- `src/rag/chunker.py` — токенайзер-чанкер на основе `BAAI/bge-m3`, параметры 200–300 токенов с overlap 50 (issue #45 MUST 2).
-- `scripts/evaluate/evaluate_quality.py` — расчёт точности/полноты/F1 по `[Статус]` против `test_data/gold_standard.json` (issue #45 SHOULD 1).
-- `scripts/evaluate/benchmark_pipeline.py` — бенчмарк пропускной способности пайплайна на N синтетических требований в режимах `stub` / `production` (issue #45 SHOULD 1).
-- `CONTRIBUTING.md` — Definition of Done, матрица команд, правила ветвления (issue #45 MAY 1).
-- `SECURITY.md` — политика обработки утечек, SLA, контакты Product Owner (issue #45 MAY 1).
-- `tests/test_excel_exporter.py`, `tests/test_app_retry.py`, `tests/test_evaluate_quality.py` — регресс-тесты на FR-06 (4-колоночный экспорт), retry-by-RunID и контракт F1-оценщика.
+- **BL-01** (#91): Hybrid retrieval (BM25 + `BAAI/bge-m3` dense) с RRF-фьюзией (`k=60`) и INFO-логированием `bm25_hits`, `dense_hits`, `fused`, `rrf_k`, `top_k`.
+- **BL-02** (#109): Metadata inheritance (Section Propagation) для чанков базы знаний: наследование `section_title` / `section_number`, audit-флаг `section_inherited`, fallback по имени документа и улучшение coverage.
+- **BL-04** (#91): Strict embedder config и централизованное логирование параметров retrieval-пути.
+- **BL-06** (#92): Chunker L1: section-aware splitting, improved heading detection, guardrails 384–768 токенов и тесты L1-контракта.
+- **BL-07** (#93): Два режима UI (`Анализ ТЗ` / `Консультация по документации`) с историей диалога, очисткой истории и логированием `ui_prompt_built`.
+- **BL-08** (#94): Prompt Library (`prompts/`) с версионированием, SHA-256 аудитом, fallback-цепочкой и `src/llm/prompt_loader.py`.
+- **BL-15** (#107): Контекстно-зависимый экспорт из KB UI: `.xlsx` для режима анализа ТЗ и `.md` для консультаций, с маскированием строковых данных.
+- **BL-22** (#101): Decoding Config: стандарт `docs/standards/llm-behavior.md`, централизованные параметры `temperature`, `top_p`, `seed`, `max_tokens` и аудит `decoding_lock applied`.
+- **BL-23** (#103): Расширенный audit trail с `run_id`, latency, provider fallback, prompt version/hash, статусами ответов и masked structured `LLM_REQUEST` / `LLM_RESPONSE`.
+- **BL-13** (#106): Graceful error handling and retry UX in KB UI: сохранение последнего запроса, кнопка повторной попытки, блокировка ввода во время queued generation и безопасное отображение ошибок.
+- **BL-05** (#105): Evaluation script for RAG metrics: Hit Rate@5, MRR и JSON-отчёт `outputs/eval_report_v1.json`.
+- **BL-09.1** (#104): Clickable citation links with page anchors and safe FastAPI static endpoint `GET /docs/{filename}`.
+- `src/ui/app.py` — Streamlit UI для ручного тестирования RAG-пайплайна по базе знаний: поле запроса, выбор провайдера, Debug Mode, ответ LLM и секция Source Chunks.
+- `python-dotenv` в `requirements.txt` и `.env.example` с плейсхолдерами `DEEPSEEK_API_KEY`, `GIGACHAT_API_KEY`, `USE_TEST_DATA_MODE`, `STRICT_EMBEDDER`.
+- `scripts/evaluate/evaluate_quality.py` и `tests/test_quality.py` — CLI и smoke-тесты для метрик качества классификации.
+- `docs/audit/2026-05-12_repository-consistency_audit_v1.md` и `docs/analysis/2026-05-15_analysis_repo-state-and-mvp-recommendations_v1.md` — аудит состояния репозитория и рекомендации к MVP.
+- `scripts/evaluate/benchmark_pipeline.py` — бенчмарк пропускной способности пайплайна на синтетических требованиях.
+- `CONTRIBUTING.md` и `SECURITY.md` — Definition of Done, матрица команд, правила ветвления и политика обработки утечек.
+- `tests/test_excel_exporter.py`, `tests/test_app_retry.py`, `tests/test_evaluate_quality.py` — регресс-тесты на FR-06, retry-by-RunID и контракт F1-оценщика.
 
 ### Changed
-- `configs/embedding_config.yaml` и `docs/standards/embedding-model.md` — добавлен
-  `metadata_coverage_min: 0.65`, параметры `section_propagation.*` и поле
-  `section_inherited` в обязательную схему метаданных (issue #109).
-- `src/ui/app.py` — кликабельные citation labels теперь включают
-  `section_title` / `section_number` или fallback-подпись раздела, если эти
-  поля есть в metadata чанка (issue #109).
-- `configs/embedding_config.yaml` — `chunk_size: 512`, `chunk_overlap: 64`, `min_chunk_size: 384`, `max_chunk_size: 768`, новый флаг `section_aware_chunking: true` (BL-06, issue #92). См. ⚠️ BREAKING CHANGE выше.
-- `src/rag/chunker.py` — `DEFAULT_CHUNK_SIZE = 512`, `DEFAULT_CHUNK_OVERLAP = 64`, `MIN_CHUNK_SIZE = 384`, `MAX_CHUNK_SIZE = 768`, добавлен section-aware splitter (вкл. по умолчанию); `TokenChunker.from_config` пробрасывает `section_aware_chunking` из YAML (BL-06, issue #92).
-- `docs/standards/embedding-model.md` — обновлён до v1.2 (BL-06, issue #92): §5.1 актуализирован под L1-параметры 512/64 + section-aware, добавлена запись в §8 «История изменений».
-- `docs/ADR/003-multi-agent-orchestration-draft.md` обновлён до **Concept (Review) v1.1** (issue #81): добавлены §2.1.1 контракт диспетчеризации очереди (`asyncio.Queue` / Redis Streams + `Semaphore` + backpressure), §2.4 единый event envelope, §2.5 контракт отказоустойчивости `Data-Enricher` (retry / DLQ / healthcheck `/ready` & `/live`, изоляция от online-пайплайна); §3.2 уточнена кластеризация Market-Analyst (`centroid_distance + min_cluster_size + manual_validation_threshold` вместо `cosine ≥ 0.95`); **новый §4 Security & Compliance** — prompt-injection mitigation, data-poisoning prevention, `sanitize_for_log()`, access control offline-агентов, mapping на ISO/IEC 23894 и NIST AI RMF; §7 расширен инфраструктурными триггерами (RAM ≥ 16 ГБ, CPU ≥ 4 cores, выделенная нода для offline-агентов); **новый §8 Trace & Observability** — additive-расширение FR-08 форматом `agent_trace` (`agent_id`, `step`, `input_hash`, `output_hash`, `latency_ms`, `attempt`, `outcome`). Статус документа остаётся `Concept`; кодовые изменения по-прежнему заблокированы до `Accepted`.
-- Проект переименован: `mango-tz-ai-analyzer` → `clarify-engine-ai`. Удалены все упоминания `mango`, `Mango Office`, `MANGO`, `Манго` из кода, конфигов, тестов, промптов и документации; заменены на нейтральные термины (`internal_kb`, `product_docs`, «целевая платформа», `clarify_engine_kb`). Файл `knowledge_base/sources/mango_crm_integration.md` переименован в `crm_integration.md` (issue #59).
-- `docs/CONCEPT.md` обновлён до версии 2.0 (issue #37): развёрнутая редакция SSoT-документа с согласованной структурой документации, детализированными FR-01..FR-08 и критериями приёмки, полным набором НФТ NFR-01..NFR-09, расширенной матрицей рисков R-01..R-09, Exit Criteria для MVP / Пилота / Масштабирования, глоссарием и реестром связанных документов.
-- `requirements.txt` — раскомментированы `rank_bm25`, `chromadb`, `sentence-transformers`; добавлена инструкция установки `torch` (CPU) для облачных сред (issue #45 MUST 1).
-- `src/llm/client.py` — экспоненциальный backoff `[5с, 15с, 45с]` для retriable-ошибок (timeout / 5xx / rate-limit), последовательные вызовы (issue #45 MUST 3).
-- `src/pipeline.py` — на полный отказ строка помечается `[Статус: Ошибка]`, пайплайн продолжает обработку оставшихся требований (issue #45 MUST 3).
-- `src/exporters/excel_exporter.py` — экспорт ограничен ровно четырьмя MVP-колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` (issue #45 MUST 4).
-- `src/app.py` — Streamlit UI вызывает реальный `run_analysis`, отображает прогресс и счётчики Успешно/Ошибки, кнопка «Повторить только ошибки» фильтрует строки по `RunID` без повторной загрузки файла; добавлена вкладка «Справка для БА» (issue #45 MUST 5).
-- `src/rag/retriever.py` — Strict-Embedder Mode: при недоступной модели `RuntimeError("Embedding model unavailable. Strict mode enabled.")`, fallback на hash-эмбеддинг удалён (issue #45 MUST 2).
-- `knowledge_base/indexing/build_index.py` — SHA-256 хеши, синхронизация с `source_registry.csv`, чанкинг через `src/rag/chunker.py` (issue #45 MUST 2).
-- `configs/masking_rules.yaml` — оставлены только согласованные паттерны Email/Phone/IP/Domain; маски ФИО/юр.лиц/ИП отложены (issue #45 MUST 3).
+- `configs/embedding_config.yaml` и `docs/standards/embedding-model.md` обновлены под параметры `chunk_size=512`, `chunk_overlap=64`, `metadata_coverage_min=0.65`, section propagation и обязательную схему метаданных.
+- `src/rag/chunker.py` переведён на L1-параметры 512/64, guardrails 384–768 и section-aware splitter, включаемый через YAML.
+- `src/ui/app.py` показывает кликабельные citation labels с `section_title`, `section_number` или fallback-подписью раздела.
+- `docs/ADR/003-multi-agent-orchestration-draft.md` обновлён до Concept (Review) v1.1 с контрактами очередей, event envelope, отказоустойчивостью, security/compliance и observability.
+- Проект переименован с `mango-tz-ai-analyzer` на `clarify-engine-ai`; брендовые упоминания заменены на нейтральные термины.
+- `docs/CONCEPT.md` обновлён до версии 2.0 с актуальными FR/NFR, рисками, Exit Criteria, глоссарием и реестром связанных документов.
+- `requirements.txt` актуализирован для retrieval-зависимостей (`rank_bm25`, `chromadb`, `sentence-transformers`) и установки CPU-версии `torch`.
+- `src/llm/client.py` использует экспоненциальный backoff `[5с, 15с, 45с]` для retriable-ошибок при последовательных LLM-вызовах.
+- `src/pipeline.py` помечает полный отказ строки как `[Статус: Ошибка]` и продолжает обработку остальных требований.
+- `src/exporters/excel_exporter.py` ограничивает экспорт ровно четырьмя MVP-колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`.
+- `src/app.py` вызывает реальный `run_analysis`, отображает прогресс и счётчики, поддерживает повтор только ошибочных строк и вкладку справки для БА.
+- `src/rag/retriever.py` удалил hash-embedding fallback в Strict-Embedder Mode и теперь падает с явной ошибкой при недоступной модели.
+- `knowledge_base/indexing/build_index.py` добавил SHA-256 хеши, синхронизацию с `source_registry.csv` и чанкинг через `src/rag/chunker.py`.
+- `configs/masking_rules.yaml` оставляет только согласованные паттерны Email/Phone/IP/Domain; маски ФИО/юрлиц/ИП отложены.
+
+### Documentation
+- Созданы и обновлены ADR: `docs/ADR/004-prompt-management.md`, `docs/ADR/004-ui-operation-modes.md`, `docs/ADR/005-audit-trail.md`, `docs/ADR/006-citation-links.md`, `docs/ADR/007-error-handling.md`, `docs/ADR/008-data-export.md`.
+- Обновлены `docs/CONCEPT.md`, `docs/standards/embedding-model.md`, `docs/standards/llm-behavior.md`, `docs/standards/evaluation-metrics.md`, `docs/standards/README.md`.
+- Добавлены sprint/audit материалы в `docs/audit/` и `docs/analysis/`, включая отчёты по состоянию репозитория, MVP-рекомендациям и RAG-оптимизации.
 
 ### Removed
-- `knowledge_base/indexing/chunk_config.yaml` — параметры чанкинга читаются только из `configs/embedding_config.yaml` (issue #45 MUST 2).
-- **LLM fallback-цепочка упрощена до двух провайдеров — DeepSeek (приоритет 1, free tier) и GigaChat (приоритет 2, RU-резидентный).** Из `configs/llm_config.yaml`, `src/llm/client.py`, `.env.example`, документации (`README.md`, `docs/CONCEPT.md`, `docs/ADR/001-rag-architecture.md`) удалены провайдеры Qwen (DashScope) и YandexGPT, а также связанные с ними переменные окружения и колеры (issue #64).
+- `knowledge_base/indexing/chunk_config.yaml` удалён; параметры чанкинга читаются только из `configs/embedding_config.yaml`.
+- Провайдеры Qwen (DashScope) и YandexGPT удалены из fallback-цепочки, конфигов, `.env.example` и документации; актуальная цепочка — DeepSeek и GigaChat.
 
 ## [0.1.0-mvp] - 2026-05-12
 
