@@ -102,7 +102,9 @@ def test_classify_audit_trail_masks_logs_and_preserves_run_id_on_fallback(
     assert getattr(success, "prompt_version", None) == "v1.0"
     assert re.fullmatch(r"[0-9a-f]{64}", getattr(success, "prompt_hash", ""))
     assert getattr(success, "classification", None) == "Да"
-    assert getattr(success, "latency_ms", None) >= 0.0
+    latency_ms = getattr(success, "latency_ms", None)
+    assert isinstance(latency_ms, (int, float))
+    assert latency_ms >= 0.0
     assert "admin@example.com" not in repr(getattr(success, "response", ""))
     assert "[EMAIL]" in repr(getattr(success, "response", ""))
 
@@ -166,7 +168,9 @@ def test_rag_audit_trail_masks_prompt_and_preserves_run_id_on_fallback(
         record for record in responses if getattr(record, "status", None) == "success"
     )
     assert getattr(success, "provider", None) == "openrouter"
-    assert getattr(success, "latency_ms", None) >= 0.0
+    latency_ms = getattr(success, "latency_ms", None)
+    assert isinstance(latency_ms, (int, float))
+    assert latency_ms >= 0.0
     assert "support@example.com" not in repr(getattr(success, "response", ""))
     assert "[EMAIL]" in repr(getattr(success, "response", ""))
 

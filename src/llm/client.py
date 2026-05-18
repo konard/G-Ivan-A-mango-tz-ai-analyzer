@@ -610,7 +610,6 @@ class LLMClient:
             except Exception as exc:  # noqa: BLE001 - fall through to next provider
                 last_error = exc
                 last_provider = name
-                logger.warning(
                 self._safe_audit_log(
                     "LLM_RESPONSE",
                     run_id=run_id,
@@ -745,7 +744,6 @@ class LLMClient:
                 except RetriableProviderError as exc:
                     last_error = exc
                     last_provider = provider_name
-                    logger.warning(
                     self._safe_audit_log(
                         "LLM_RESPONSE",
                         run_id=run_id,
@@ -773,7 +771,6 @@ class LLMClient:
                 except Exception as exc:  # noqa: BLE001 - try the next provider
                     last_error = exc
                     last_provider = provider_name
-                    logger.warning(
                     self._safe_audit_log(
                         "LLM_RESPONSE",
                         run_id=run_id,
