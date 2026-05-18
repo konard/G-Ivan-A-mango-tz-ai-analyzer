@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
@@ -94,6 +95,7 @@ PROVIDER_DISPLAY = {
 # BL-13 (issue #106) — graceful degradation state. The issue explicitly pins
 # ``last_query`` as the retry source, so that key remains un-namespaced.
 UI_GENERATION_ERROR_TEXT = "Не удалось получить ответ."
+UI_GENERATION_ERROR_REASON = "Все провайдеры недоступны"
 RETRY_BUTTON_LABEL = "Повторить"
 SESSION_LAST_QUERY_KEY = "last_query"
 SESSION_LAST_ERROR_KEY = "last_error"
@@ -163,6 +165,15 @@ def get_citations_config(ui_config: Optional[Dict[str, Any]] = None) -> Dict[str
         "base_url": str(citations.get("base_url") or DEFAULT_CITATIONS_BASE_URL),
         "source_dir": source_dir,
     }
+
+
+def get_debug_error_details(ui_config: Optional[Dict[str, Any]] = None) -> bool:
+    """Return true only when UI config explicitly enables error diagnostics."""
+    cfg = ui_config if ui_config is not None else load_ui_config()
+    ui_cfg = cfg.get("ui") if isinstance(cfg, dict) else None
+    if not isinstance(ui_cfg, dict):
+        return False
+    return bool(ui_cfg.get("debug_error_details", False))
 
 
 def truncate(text: str, limit: int = CHUNK_PREVIEW_CHARS) -> str:
@@ -669,6 +680,23 @@ def _render_retry_notice(mode: str) -> bool:
         return False
 
     st.error(str(error.get("message") or UI_GENERATION_ERROR_TEXT))
+    st.caption(f"Причина: {error.get('reason') or UI_GENERATION_ERROR_REASON}")
+    st.download_button(
+        "📥 Скачать логи",
+        data=error.get("report_bytes") or b"",
+        file_name=_error_report_filename(),
+        mime="text/plain; charset=utf-8",
+        key=f"download_error_{mode}",
+    )
+    if get_debug_error_details():
+        with st.expander("ℹ️ Как исправить", expanded=False):
+            report = error.get("report") if isinstance(error.get("report"), dict) else {}
+            recommendations = report.get("recommendations") or [
+                "Проверьте конфигурацию провайдеров и серверные логи по run_id."
+            ]
+            for item in recommendations:
+                st.markdown(f"- {item}")
+            st.caption(f"run_id: {error.get('run_id', '')}")
     clicked = st.button(
         RETRY_BUTTON_LABEL,
         key=f"retry_{mode}",
@@ -683,6 +711,11 @@ def _render_retry_notice(mode: str) -> bool:
         return False
     _queue_generation(query, mode)
     return True
+
+
+def _error_report_filename() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return f"clarify_error_{timestamp}.txt"
 
 
 def _generation_error_types() -> tuple[type[BaseException], ...]:
@@ -716,6 +749,17 @@ def _provider_for_exception(exc: BaseException) -> str:
     if isinstance(exc, KBError):
         return "knowledge_base"
     return "rag_fallback_chain"
+
+
+def _provider_count() -> int:
+    cfg = load_llm_config()
+    providers = cfg.get("providers") if isinstance(cfg, dict) else None
+    if isinstance(providers, dict) and providers:
+        return len(providers)
+    fallback = cfg.get("fallback_providers") if isinstance(cfg, dict) else None
+    if isinstance(fallback, list) and fallback:
+        return len(fallback)
+    return 1
 
 
 def _safe_log_ui_error(
@@ -767,14 +811,42 @@ def _store_generation_error(
     exc: BaseException,
     provider: Optional[str] = None,
 ) -> None:
+    from src.utils.error_handler import ErrorHandler
+
     provider_name = provider or _provider_for_exception(exc)
+    llm_config = load_llm_config()
+    provider_count = _provider_count()
+    handler = ErrorHandler()
+    error_context = handler.collect_error_context(
+        provider_name,
+        exc if isinstance(exc, Exception) else Exception(str(exc)),
+        {
+            "run_id": run_id,
+            "provider_count": provider_count,
+            "error_type": type(exc).__name__,
+        },
+    )
+    report = handler.generate_error_report(
+        [error_context],
+        query,
+        {
+            **llm_config,
+            "run_id": run_id,
+            "provider": provider_name,
+            "provider_count": provider_count,
+        },
+    )
     st.session_state[SESSION_LAST_QUERY_KEY] = query.strip()
     st.session_state[SESSION_LAST_ERROR_KEY] = {
         "mode": mode,
         "message": UI_GENERATION_ERROR_TEXT,
+        "reason": report.get("reason")
+        or f"{UI_GENERATION_ERROR_REASON} (1 из {provider_count})",
         "run_id": run_id,
         "error_type": type(exc).__name__,
         "provider": provider_name,
+        "report": report,
+        "report_bytes": handler.export_to_txt(report),
     }
     _safe_log_ui_error(
         run_id=run_id,
