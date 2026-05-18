@@ -4,6 +4,10 @@ This module provides functions for extracting JSON from LLM responses and
 validating them against the classification schema defined in
 ``prompts/system_classifier_v1.0.md``.
 
+BL-11 also uses this module for the multi-hop reflection schema from
+``prompts/system_rag_reflection_v1.0.md``:
+``{"sufficient": boolean, "follow_up": string | null, "confidence": float}``.
+
 Validation rules:
 - ``classification`` must be one of: ``Да``, ``Нет``, ``Частично``, ``НД``.
 - ``reasoning`` must be a non-empty string.
@@ -19,13 +23,20 @@ still runs in slim environments (e.g. minimal CI images).
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 _VALID_CATEGORIES = {"Да", "Нет", "Частично", "НД"}
 
 
 try:  # Pydantic v2 is the project pin (see requirements.txt).
-    from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+    from pydantic import (
+        BaseModel,
+        ConfigDict,
+        Field,
+        StrictBool,
+        ValidationError,
+        field_validator,
+    )
 
     _PYDANTIC_AVAILABLE = True
 
@@ -83,10 +94,35 @@ try:  # Pydantic v2 is the project pin (see requirements.txt).
                 raise ValueError("'confidence' must be within [0.0, 1.0]")
             return float(value)
 
+    class ReflectionPayload(BaseModel):
+        """Strict schema for the multi-hop reflection judge response."""
+
+        model_config = ConfigDict(extra="ignore")
+
+        sufficient: StrictBool
+        follow_up: Optional[str] = None
+        confidence: float
+
+        @field_validator("follow_up", mode="before")
+        @classmethod
+        def _normalise_follow_up(cls, value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        @field_validator("confidence")
+        @classmethod
+        def _validate_reflection_confidence(cls, value: float) -> float:
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError("'confidence' must be within [0.0, 1.0]")
+            return float(value)
+
 except ImportError:  # pragma: no cover - exercised only when pydantic is absent
     _PYDANTIC_AVAILABLE = False
     Citation = None  # type: ignore[assignment]
     ClassificationPayload = None  # type: ignore[assignment]
+    ReflectionPayload = None  # type: ignore[assignment]
     ValidationError = Exception  # type: ignore[assignment]
 
 
@@ -184,3 +220,49 @@ def validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if _PYDANTIC_AVAILABLE:
         return _validate_with_pydantic(payload)
     return _validate_manually(payload)
+
+
+def _validate_reflection_with_pydantic(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        model = ReflectionPayload(**payload)  # type: ignore[misc]
+    except ValidationError as exc:
+        raise ValueError(f"Reflection payload failed schema validation: {exc}") from exc
+    return model.model_dump()
+
+
+def _validate_reflection_manually(payload: Dict[str, Any]) -> Dict[str, Any]:
+    sufficient = payload.get("sufficient")
+    if not isinstance(sufficient, bool):
+        raise ValueError("'sufficient' must be a boolean")
+
+    follow_up = payload.get("follow_up")
+    if follow_up is not None:
+        follow_up = str(follow_up).strip() or None
+
+    confidence = payload.get("confidence")
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("'confidence' must be a float") from exc
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("'confidence' must be within [0.0, 1.0]")
+
+    return {
+        "sufficient": sufficient,
+        "follow_up": follow_up,
+        "confidence": confidence,
+    }
+
+
+def validate_reflection_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate a multi-hop reflection response.
+
+    The reflection judge must return exactly the contract described in
+    ``prompts/system_rag_reflection_v1.0.md``:
+    ``{"sufficient": bool, "follow_up": str | null, "confidence": float}``.
+    Unknown keys are ignored; missing or malformed required keys raise
+    ``ValueError`` so callers can gracefully fall back to the last context.
+    """
+    if _PYDANTIC_AVAILABLE:
+        return _validate_reflection_with_pydantic(payload)
+    return _validate_reflection_manually(payload)

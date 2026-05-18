@@ -123,6 +123,50 @@ def test_get_max_history_messages_reads_default_from_llm_config() -> None:
     assert app.get_max_history_messages(config) == 6
 
 
+# ------------------------------------------------------------- multi-hop cfg --
+def test_resolve_multi_hop_settings_defaults_to_disabled() -> None:
+    settings = app.resolve_multi_hop_settings({}, app.MODE_CONSULTATION)
+    assert settings == {
+        "enabled": False,
+        "max_hops": 2,
+        "min_confidence_to_stop": 0.8,
+    }
+
+
+def test_resolve_multi_hop_settings_hard_locks_analysis_mode() -> None:
+    config = {
+        "rag": {
+            "multi_hop_enabled": True,
+            "max_hops": 3,
+            "min_confidence_to_stop": 0.6,
+        }
+    }
+    settings = app.resolve_multi_hop_settings(config, app.MODE_STATELESS)
+    assert settings["enabled"] is False
+    assert settings["max_hops"] == 3
+    assert settings["min_confidence_to_stop"] == 0.6
+
+
+def test_resolve_multi_hop_settings_enables_only_consultation_mode() -> None:
+    config = {
+        "rag": {
+            "multi_hop_enabled": True,
+            "max_hops": 2,
+            "min_confidence_to_stop": 0.9,
+        }
+    }
+    settings = app.resolve_multi_hop_settings(config, app.MODE_CONSULTATION)
+    assert settings["enabled"] is True
+    assert settings["max_hops"] == 2
+    assert settings["min_confidence_to_stop"] == 0.9
+
+
+def test_shipped_llm_config_multi_hop_defaults_to_disabled() -> None:
+    config = app.load_llm_config()
+    settings = app.resolve_multi_hop_settings(config, app.MODE_CONSULTATION)
+    assert settings["enabled"] is False
+
+
 # ---------------------------------------------------------------- trim_history --
 def test_trim_history_keeps_last_n_messages() -> None:
     msgs = [{"role": "user", "content": str(i)} for i in range(10)]
@@ -322,6 +366,14 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
         top_k,
         *,
         use_parent_context=False,
+        ui_mode=app.MODE_STATELESS,
+        llm_config=None,
+    ):
+        captured["use_parent_context"] = use_parent_context
+        captured["ui_mode"] = ui_mode
+        captured["multi_hop"] = app.resolve_multi_hop_settings(
+            llm_config or {}, ui_mode
+        )["enabled"]
         enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
@@ -329,6 +381,11 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
         return [{"source": "doc.md", "text": "context", "score": 1.0}]
 
     monkeypatch.setattr(app, "search_kb", _search)
+    monkeypatch.setattr(
+        app,
+        "load_llm_config",
+        lambda: {"rag": {"multi_hop_enabled": True}},
+    )
     monkeypatch.setattr(app, "get_llm_client", lambda: _Client())
     monkeypatch.setattr(app, "get_rag_system_prompt", lambda: "system")
     monkeypatch.setattr(app, "_safe_log_prompt_built", lambda **_kwargs: None)
@@ -345,6 +402,12 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
     assert chunks
     assert "<context>" in prompt
     assert captured["use_parent_context"] is True
+    assert captured["ui_mode"] == app.MODE_CONSULTATION
+    assert captured["multi_hop"] is True
+    assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
+
+
+def test_retrieve_and_answer_ignores_multi_hop_in_analysis_mode(monkeypatch) -> None:
     assert captured["enable_query_expansion"] is True
     assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
 
@@ -361,6 +424,22 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
         top_k,
         *,
         use_parent_context=False,
+        ui_mode=app.MODE_STATELESS,
+        llm_config=None,
+    ):
+        captured["use_parent_context"] = use_parent_context
+        captured["ui_mode"] = ui_mode
+        captured["multi_hop"] = app.resolve_multi_hop_settings(
+            llm_config or {}, ui_mode
+        )["enabled"]
+        return [{"source": "doc.md", "text": "context", "score": 1.0}]
+
+    monkeypatch.setattr(app, "search_kb", _search)
+    monkeypatch.setattr(
+        app,
+        "load_llm_config",
+        lambda: {"rag": {"multi_hop_enabled": True}},
+    )
         enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
@@ -382,6 +461,10 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
 
     assert answer == "answer"
     assert chunks
+    assert "<history>" not in prompt
+    assert captured["use_parent_context"] is False
+    assert captured["ui_mode"] == app.MODE_STATELESS
+    assert captured["multi_hop"] is False
     assert "<context>" in prompt
     assert captured["use_parent_context"] is False
     assert captured["enable_query_expansion"] is False

@@ -19,6 +19,11 @@
 |---------|------------|--------|---------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
 | v1.0    | 2026-05-17 | konard | `a0339756d33cbbb32a461b7dbd88e72d2d7e60ec3c3660c68f052783a19614a4` | Извлечён из `src/ui/app.py::SYSTEM_PROMPT`. Контракт `<context>` + `<question>`, mitigation R-09 (prompt-injection), Markdown-вывод. |
 
+## system_rag_reflection (multi-hop retrieval judge)
+
+| Version | Date       | Author | SHA-256 (hex)                                                      | Changes                                                                                                                      |
+|---------|------------|--------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| v1.0    | 2026-05-18 | konard | `7b5541188306f089f4fbd2c0f263abb4d95731fe8bb63c3d638b83bf8132d9ed` | Initial BL-11 reflection prompt. Requires strict JSON with `sufficient`, `follow_up`, and `confidence`; forbids answering. |
 ## system_rag_query_expansion (переформулировки запроса)
 
 | Version | Date       | Author | SHA-256 (hex)                                                      | Changes                                                                 |

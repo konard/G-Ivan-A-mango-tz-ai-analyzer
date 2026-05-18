@@ -26,9 +26,11 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
+
+from src.llm.validator import extract_json, validate_reflection_payload
 
 logger = logging.getLogger(__name__)
 
@@ -591,6 +593,206 @@ def expand_parent_context(
             )
             existing.setdefault("child_chunks", []).append(child_ref)
     return [grouped[parent_id] for parent_id in order]
+
+
+# ------------------------------------------------------------- Iterative RAG --
+ReflectionCall = Callable[[str], Any]
+
+
+def _chunk_dedupe_key(chunk: Mapping[str, Any]) -> Tuple[str, str]:
+    """Return the BL-11 cross-hop dedupe key for a retrieved chunk."""
+    meta = chunk.get("metadata") or {}
+    source = str(chunk.get("source") or meta.get("source") or "unknown")
+    chunk_idx = chunk.get("chunk_idx", meta.get("chunk_idx"))
+    if chunk_idx is not None:
+        return source, str(chunk_idx)
+
+    # The production index is required to carry chunk_idx, but tests and
+    # degraded data may not. Keep such chunks distinct unless their visible
+    # identity is also identical.
+    page = str(chunk.get("page") or _page_from_metadata(meta))
+    text = str(chunk.get("text") or "")
+    return source, f"{page}::{text}"
+
+
+def _append_deduplicated(
+    existing: Sequence[Mapping[str, Any]],
+    new_chunks: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Append new chunks, preserving first-seen order by ``(source, chunk_idx)``."""
+    merged: List[Dict[str, Any]] = [dict(chunk) for chunk in existing]
+    seen = {_chunk_dedupe_key(chunk) for chunk in merged}
+    for chunk in new_chunks:
+        if not isinstance(chunk, Mapping):
+            continue
+        key = _chunk_dedupe_key(chunk)
+        if key in seen:
+            continue
+        merged.append(dict(chunk))
+        seen.add(key)
+    return merged
+
+
+def _normalise_max_hops(value: Any) -> int:
+    try:
+        hops = int(value)
+    except (TypeError, ValueError):
+        return 2
+    return max(1, hops)
+
+
+def _normalise_confidence_threshold(value: Any) -> float:
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return 0.8
+    return min(1.0, max(0.0, threshold))
+
+
+def build_reflection_user_prompt(
+    question: str,
+    chunks: Sequence[Mapping[str, Any]],
+    *,
+    current_query: Optional[str] = None,
+) -> str:
+    """Build the reflection judge user message for the current hop."""
+    context_blocks: List[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        meta = chunk.get("metadata") or {}
+        source = str(chunk.get("source") or meta.get("source") or "unknown")
+        chunk_idx = chunk.get("chunk_idx", meta.get("chunk_idx"))
+        page = chunk.get("page") or _page_from_metadata(meta)
+        chunk_suffix = f" chunk_idx={chunk_idx}" if chunk_idx is not None else ""
+        page_suffix = f" page={page}" if page else ""
+        text = str(chunk.get("text") or "").strip()
+        context_blocks.append(
+            f"[{idx}] source={source}{chunk_suffix}{page_suffix}\n{text}"
+        )
+    context = "\n\n".join(context_blocks) if context_blocks else "(no context)"
+    query_block = (
+        f"\n<current_query>{current_query.strip()}</current_query>"
+        if current_query and current_query.strip() != question.strip()
+        else ""
+    )
+    return (
+        f"<question>{question.strip()}</question>"
+        f"{query_block}\n\n"
+        f"<context>\n{context}\n</context>"
+    )
+
+
+class IterativeRetriever:
+    """Multi-hop wrapper over an existing retriever.
+
+    The wrapper performs one normal search, asks a reflection LLM whether the
+    accumulated context is sufficient, and optionally follows up with one or
+    more reformulated searches. Reflection failures are deliberately swallowed:
+    callers receive the last accumulated context so the UI can continue to the
+    final answer generation path.
+    """
+
+    def __init__(
+        self,
+        retriever: Any,
+        *,
+        reflection_call: ReflectionCall,
+        max_hops: int = 2,
+        min_confidence_to_stop: float = 0.8,
+    ) -> None:
+        self.retriever = retriever
+        self.reflection_call = reflection_call
+        self.max_hops = _normalise_max_hops(max_hops)
+        self.min_confidence_to_stop = _normalise_confidence_threshold(
+            min_confidence_to_stop
+        )
+
+    def search(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        use_parent_context: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        if not query or not query.strip():
+            return []
+
+        original_query = query.strip()
+        current_query = original_query
+        seen_queries = {current_query}
+        accumulated: List[Dict[str, Any]] = []
+
+        for hop_idx in range(self.max_hops):
+            hop_chunks = self._search_once(
+                current_query,
+                top_k=top_k,
+                use_parent_context=use_parent_context,
+            )
+            accumulated = _append_deduplicated(accumulated, hop_chunks)
+
+            prompt = build_reflection_user_prompt(
+                original_query,
+                accumulated,
+                current_query=current_query,
+            )
+            try:
+                reflection = self._reflect(prompt)
+            except Exception as exc:  # noqa: BLE001 - graceful degradation
+                logger.warning(
+                    "IterativeRetriever: reflection failed at hop %d/%d; "
+                    "using accumulated context: %s",
+                    hop_idx + 1,
+                    self.max_hops,
+                    exc,
+                )
+                break
+
+            sufficient = bool(reflection["sufficient"])
+            confidence = float(reflection["confidence"])
+            follow_up = str(reflection.get("follow_up") or "").strip()
+            logger.info(
+                "IterativeRetriever.search: hop=%d/%d sufficient=%s "
+                "confidence=%.3f accumulated=%d follow_up=%s",
+                hop_idx + 1,
+                self.max_hops,
+                sufficient,
+                confidence,
+                len(accumulated),
+                bool(follow_up),
+            )
+
+            if sufficient and confidence >= self.min_confidence_to_stop:
+                break
+            if hop_idx + 1 >= self.max_hops:
+                break
+            if not follow_up or follow_up in seen_queries:
+                break
+
+            seen_queries.add(follow_up)
+            current_query = follow_up
+
+        return accumulated
+
+    def _search_once(
+        self,
+        query: str,
+        *,
+        top_k: Optional[int],
+        use_parent_context: Optional[bool],
+    ) -> List[Dict[str, Any]]:
+        kwargs: Dict[str, Any] = {}
+        if top_k is not None:
+            kwargs["top_k"] = top_k
+        if use_parent_context is not None:
+            kwargs["use_parent_context"] = use_parent_context
+        results = self.retriever.search(query, **kwargs)
+        return list(results or [])
+
+    def _reflect(self, prompt: str) -> Dict[str, Any]:
+        raw = self.reflection_call(prompt)
+        if isinstance(raw, Mapping):
+            payload = dict(raw)
+        else:
+            payload = extract_json(str(raw))
+        return validate_reflection_payload(payload)
 
 
 # ---------------------------------------------------------- ChromaDB retriever --
