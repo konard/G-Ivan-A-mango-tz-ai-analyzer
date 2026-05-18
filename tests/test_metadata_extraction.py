@@ -1,11 +1,12 @@
-"""Tests for BL-02 chunk metadata extraction (issue #87).
+"""Tests for BL-02/BL-10 chunk metadata extraction.
 
 Every chunk persisted in ChromaDB must carry the BL-02 / BL-16a / NFR-02
 required keys: ``source``, ``chunk_idx``, ``page_number``, ``section_title``,
-``section_number``, ``product``, and the audit flag ``section_inherited``.
+``section_number``, ``product``, the audit flag ``section_inherited``, and
+the BL-10 parent context keys ``parent_id``, ``section_id``, ``parent_text``.
 These tests pin the small extraction helpers added to
 ``knowledge_base/indexing/build_index.py`` so regressions in heading detection,
-propagation, or product inference surface quickly.
+propagation, product inference, or parent grouping metadata surface quickly.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "knowledge_base" / "indexing" / "build_index.py"
@@ -41,6 +44,17 @@ def test_required_metadata_keys_include_section_audit_flag() -> None:
         "section_id",
         "parent_text",
     )
+
+
+def test_embedding_config_required_metadata_matches_indexer_contract() -> None:
+    module = _load_module()
+    config = yaml.safe_load(
+        (REPO_ROOT / "configs" / "embedding_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert tuple(config["required_metadata"]) == module.REQUIRED_METADATA_KEYS
 
 
 def test_extract_section_detects_dotted_numeric_heading() -> None:

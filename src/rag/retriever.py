@@ -528,6 +528,56 @@ def build_retriever(
     return retriever
 
 
+class ParentAwareRetriever:
+    """Wrapper that turns child chunk hits into parent section contexts.
+
+    The wrapped retriever is always asked for child chunks. Parent expansion is
+    applied once after any outer retrieval strategy (multi-hop or query
+    expansion) has produced its final ranked list, which prevents duplicate
+    parent sections when several child hits belong to the same section.
+    """
+
+    def __init__(
+        self,
+        retriever: Any,
+        *,
+        max_chars: int = DEFAULT_PARENT_CONTEXT_MAX_CHARS,
+    ) -> None:
+        self.retriever = retriever
+        self.parent_context_max_chars = int(
+            max_chars or DEFAULT_PARENT_CONTEXT_MAX_CHARS
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.retriever, name)
+
+    def search(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        **search_kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        kwargs = dict(search_kwargs)
+        kwargs["use_parent_context"] = False
+        if top_k is not None:
+            kwargs["top_k"] = top_k
+        try:
+            child_hits = self.retriever.search(query, **kwargs)
+        except TypeError as exc:
+            if "use_parent_context" not in str(exc):
+                raise
+            kwargs.pop("use_parent_context", None)
+            child_hits = self.retriever.search(query, **kwargs)
+
+        parents = expand_parent_context(
+            list(child_hits or []),
+            max_chars=self.parent_context_max_chars,
+        )
+        if top_k is None:
+            return parents
+        return parents[: max(0, int(top_k))]
+
+
 def _parent_id(metadata: Mapping[str, Any], source: str) -> str:
     explicit = metadata.get("parent_id") or metadata.get("section_id")
     if explicit:

@@ -354,6 +354,60 @@ def test_mode_constants_match_issue_spec() -> None:
     assert app.MODE_ORDER == [app.MODE_STATELESS, app.MODE_CONSULTATION]
 
 
+def test_search_kb_wraps_parent_context_after_child_retrieval(monkeypatch) -> None:
+    class _Retriever:
+        collection_name = "kb"
+        persist_directory = "/tmp/chroma"
+        parent_context_max_chars = 1000
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def search(self, query, **kwargs):
+            self.calls.append((query, kwargs))
+            return [
+                {
+                    "text": "child one",
+                    "source": "doc.md",
+                    "score": 0.9,
+                    "metadata": {
+                        "parent_id": "doc.md::section",
+                        "parent_text": "Parent section text",
+                        "chunk_idx": 1,
+                    },
+                },
+                {
+                    "text": "child two",
+                    "source": "doc.md",
+                    "score": 0.8,
+                    "metadata": {
+                        "parent_id": "doc.md::section",
+                        "parent_text": "Parent section text",
+                        "chunk_idx": 2,
+                    },
+                },
+            ]
+
+    retriever = _Retriever()
+    monkeypatch.setattr(app, "get_retriever", lambda: retriever)
+
+    chunks = app.search_kb(
+        "Q",
+        5,
+        use_parent_context=True,
+        ui_mode=app.MODE_CONSULTATION,
+        llm_config={"rag": {"multi_hop_enabled": False}},
+        enable_query_expansion=False,
+    )
+
+    assert retriever.calls == [
+        ("Q", {"use_parent_context": False, "top_k": 5}),
+    ]
+    assert len(chunks) == 1
+    assert chunks[0]["text"] == "Parent section text"
+    assert chunks[0]["metadata"]["parent_context"] is True
+
+
 def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch) -> None:
     captured = {}
 
@@ -368,15 +422,13 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
         use_parent_context=False,
         ui_mode=app.MODE_STATELESS,
         llm_config=None,
+        enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
         captured["ui_mode"] = ui_mode
         captured["multi_hop"] = app.resolve_multi_hop_settings(
             llm_config or {}, ui_mode
         )["enabled"]
-        enable_query_expansion=False,
-    ):
-        captured["use_parent_context"] = use_parent_context
         captured["enable_query_expansion"] = enable_query_expansion
         return [{"source": "doc.md", "text": "context", "score": 1.0}]
 
@@ -404,15 +456,11 @@ def test_retrieve_and_answer_enables_parent_context_for_consultation(monkeypatch
     assert captured["use_parent_context"] is True
     assert captured["ui_mode"] == app.MODE_CONSULTATION
     assert captured["multi_hop"] is True
-    assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
-
-
-def test_retrieve_and_answer_ignores_multi_hop_in_analysis_mode(monkeypatch) -> None:
     assert captured["enable_query_expansion"] is True
     assert app.DEFAULT_MAX_HISTORY_MESSAGES == 6
 
 
-def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch) -> None:
+def test_retrieve_and_answer_ignores_multi_hop_in_analysis_mode(monkeypatch) -> None:
     captured = {}
 
     class _Client:
@@ -426,12 +474,14 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
         use_parent_context=False,
         ui_mode=app.MODE_STATELESS,
         llm_config=None,
+        enable_query_expansion=False,
     ):
         captured["use_parent_context"] = use_parent_context
         captured["ui_mode"] = ui_mode
         captured["multi_hop"] = app.resolve_multi_hop_settings(
             llm_config or {}, ui_mode
         )["enabled"]
+        captured["enable_query_expansion"] = enable_query_expansion
         return [{"source": "doc.md", "text": "context", "score": 1.0}]
 
     monkeypatch.setattr(app, "search_kb", _search)
@@ -440,13 +490,6 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
         "load_llm_config",
         lambda: {"rag": {"multi_hop_enabled": True}},
     )
-        enable_query_expansion=False,
-    ):
-        captured["use_parent_context"] = use_parent_context
-        captured["enable_query_expansion"] = enable_query_expansion
-        return [{"source": "doc.md", "text": "context", "score": 1.0}]
-
-    monkeypatch.setattr(app, "search_kb", _search)
     monkeypatch.setattr(app, "get_llm_client", lambda: _Client())
     monkeypatch.setattr(app, "get_rag_system_prompt", lambda: "system")
     monkeypatch.setattr(app, "_safe_log_prompt_built", lambda **_kwargs: None)
@@ -466,5 +509,4 @@ def test_retrieve_and_answer_keeps_query_expansion_off_for_stateless(monkeypatch
     assert captured["ui_mode"] == app.MODE_STATELESS
     assert captured["multi_hop"] is False
     assert "<context>" in prompt
-    assert captured["use_parent_context"] is False
     assert captured["enable_query_expansion"] is False

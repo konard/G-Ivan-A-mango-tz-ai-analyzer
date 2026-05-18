@@ -1,6 +1,6 @@
 # 🧮 Standard: Embedding Model
 
-**Версия:** 1.4 | **Дата:** 2026-05-18 | **Статус:** Approved
+**Версия:** 1.5 | **Дата:** 2026-05-18 | **Статус:** Approved
 
 ---
 
@@ -36,6 +36,9 @@
 `512 / 64` и расширила guardrails; версия 1.3 (BL-02 hardening, issue #109)
 добавляет section propagation и реалистичный MVP-порог покрытия `0.65`.
 Версия 1.4 (BL-10, issue #118) добавляет Parent Document Retrieval (L2).
+Версия 1.5 (BL-10, issue #137) фиксирует runtime-обвязку
+`ParentAwareRetriever`, порядок применения L2 после multi-hop/query expansion
+и синхронизацию YAML-схемы обязательных parent metadata.
 
 ### 5.1 Chunking parameters (Sprint 2, BL-06 L1)
 | Параметр | Значение | Источник | Комментарий |
@@ -141,6 +144,12 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 старые индексы не ломаются. Для получения полноценного L2-контекста требуется
 полный reindex.
 
+`ParentAwareRetriever` применяется как внешний runtime-wrapper после
+опциональных `IterativeRetriever` (multi-hop) и `QueryExpansionRetriever`.
+Это сохраняет ранжирование по child chunks, исключает повторное расширение
+одних и тех же разделов внутри каждого wrapper'а и гарантирует, что режим
+«Анализ ТЗ» остаётся на L1-контексте даже при включённых L2-флагах в коде.
+
 ## 6. Operational Notes
 - Конфигурация модели задаётся в `configs/` (имя модели, размерность, устройство исполнения) и не требует изменения кода RAG-пайплайна.
 - Любая смена модели сопровождается обновлением этого файла (увеличение версии) и заметкой в `CHANGELOG.md`.
@@ -162,3 +171,4 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 | 1.2 | 2026-05-17 | BL-06 (issue #92): `chunk_size` поднят с 250 до **512**, `chunk_overlap` — с 50 до **64**, guardrails расширены до 384–768 ток. Включён section-aware splitter (`section_aware_chunking: true`). **BREAKING CHANGE** для существующего индекса ChromaDB — требуется полный reindex после мерджа. |
 | 1.3 | 2026-05-17 | BL-02 hardening (issue #109): добавлены `section_inherited`, section propagation с page-distance reset, fallback по имени документа и MVP-порог `metadata_coverage_min: 0.65`. |
 | 1.4 | 2026-05-18 | BL-10 (issue #118): добавлены `parent_id`, `section_id`, `parent_text`, флаги `use_parent_context` / `parent_context_max_chars` и L2 Parent Document Retrieval для режима «Консультация». |
+| 1.5 | 2026-05-18 | BL-10 (issue #137): закреплены `ParentAwareRetriever`, применение L2 после multi-hop/query expansion и синхронизация `required_metadata` в YAML с parent-полями индексатора. |
