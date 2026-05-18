@@ -6,7 +6,14 @@
 
 ## [Unreleased]
 
-(сюда будут идти следующие изменения)
+### Added
+- **BL-12 (issue #124):** Query Expansion для режима «Консультация»:
+  `QueryExpansionRetriever` генерирует 3–4 семантические переформулировки
+  через `prompts/system_rag_query_expansion_v1.md`, выполняет retrieval по
+  вариантам запроса и объединяет хиты через RRF с дедупликацией. Флаги
+  `rag.query_expansion_enabled: false` и `rag.expansion_count: 3` добавлены
+  в `configs/embedding_config.yaml`; graceful fallback возвращает результаты
+  исходного запроса при сбое LLM или невалидном JSON.
 
 ## [0.2.0] - 2026-05-18
 

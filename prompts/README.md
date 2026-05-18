@@ -16,6 +16,7 @@
 prompts/
 ├── system_classifier_v1.0.md      # системный промпт RAG-классификатора
 ├── system_rag_v1.0.md             # системный промпт free-text KB Q&A (UI)
+├── system_rag_query_expansion_v1.md # промпт генерации переформулировок
 ├── few_shot_examples_v1.0.json    # калибровочные few-shot примеры
 ├── prompt_changelog.md            # история версий + SHA-256
 └── README.md                      # этот файл

@@ -232,9 +232,27 @@ def search_kb(
     top_k: int,
     *,
     use_parent_context: bool = False,
+    enable_query_expansion: bool = False,
 ) -> List[Dict[str, Any]]:
     """Run a vector search and return chunk dicts ordered by similarity."""
     retriever = get_retriever()
+    if enable_query_expansion:
+        from src.rag.query_expansion import (
+            QueryExpansionConfig,
+            QueryExpansionRetriever,
+        )
+        from src.rag.retriever import load_embedding_config
+
+        expansion_config = getattr(retriever, "config", None)
+        if not isinstance(expansion_config, dict):
+            expansion_config = load_embedding_config(str(EMBEDDING_CONFIG_PATH))
+        if QueryExpansionConfig.from_mapping(expansion_config).enabled:
+            retriever = QueryExpansionRetriever(
+                retriever,
+                get_llm_client(),
+                config=expansion_config,
+                prompts_dir=PROJECT_ROOT / "prompts",
+            )
     try:
         chunks = retriever.search(
             query,
@@ -1116,6 +1134,7 @@ def _retrieve_and_answer(
                 query,
                 top_k,
                 use_parent_context=(mode == MODE_CONSULTATION),
+                enable_query_expansion=(mode == MODE_CONSULTATION),
             )
     except _generation_error_types() as exc:
         _store_generation_error(
