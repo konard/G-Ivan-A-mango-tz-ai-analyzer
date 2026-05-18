@@ -99,6 +99,28 @@ DEEPSEEK_API_KEY=sk-...    # Основной провайдер MVP (free tier)
 GIGACHAT_API_KEY=...       # RU-резидентный fallback (Pilot/Production)
 ```
 
+### Локальный запуск с Ollama
+Ollama используется как локальный fallback для режима консультации по базе
+знаний. Параметры задаются в [`configs/llm_config.yaml`](configs/llm_config.yaml)
+и могут быть переопределены через `.env` без правок кода:
+
+```env
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b-instruct-q4_K_M
+OLLAMA_TIMEOUT=180
+```
+
+Перед запуском поднимите локальный daemon и загрузите выбранную модель:
+
+```bash
+ollama serve
+ollama pull qwen2.5:7b-instruct-q4_K_M
+```
+
+Для Docker/WSL укажите адрес доступного хоста в `OLLAMA_BASE_URL`. Для
+CPU-only АРМ оставляйте `OLLAMA_TIMEOUT` не ниже 120 секунд; дефолт проекта
+равен 180 секундам.
+
 ### 3. Запуск
 ```bash
 # Индексация базы знаний (один раз)

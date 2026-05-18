@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -52,6 +53,7 @@ DEFAULT_EMBEDDING_CONFIG_PATH = "configs/embedding_config.yaml"
 DEFAULT_MASKING_CONFIG_PATH = "configs/masking_rules.yaml"
 DEFAULT_PROMPT_PATH = "prompts/system_classifier_v1.0.md"
 HTTP_TIMEOUT_SECONDS = 30
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = 180
 DEFAULT_RETRY_ATTEMPTS = 3
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 LLM_RUN_ID_LENGTH = 12
@@ -80,7 +82,8 @@ STRICT_MODE_RECOMMENDATIONS = (
 RAG_FALLBACK_CHAIN: tuple[str, ...] = ("gigachat", "openrouter", "ollama")
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1:free"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+ENV_PLACEHOLDER_RE = re.compile(r"^\$\{([A-Z0-9_]+):(.+)\}$")
 # Fixed exponential backoff schedule (seconds), per issue #45 MUST 3.
 # index = attempt - 1; clipped to last value if more attempts are configured.
 BACKOFF_SCHEDULE_SECONDS: tuple[int, ...] = (5, 15, 45)
@@ -225,6 +228,44 @@ def _resolve_env(*candidates: Optional[str]) -> Optional[str]:
         if value:
             return value
     return None
+
+
+def _resolve_config_value(value: Any) -> Any:
+    """Resolve ``${ENV:default}`` placeholders used in YAML config values."""
+    if not isinstance(value, str):
+        return value
+    match = ENV_PLACEHOLDER_RE.fullmatch(value)
+    if match is None:
+        return value
+    env_name, default = match.groups()
+    return os.environ.get(env_name, default)
+
+
+def _resolve_int_config_value(value: Any, default: int) -> int:
+    resolved = _resolve_config_value(value)
+    try:
+        return int(resolved)
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_ollama_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Return Ollama config with YAML/env placeholders and safe defaults applied."""
+    model = _resolve_config_value(config.get("model"))
+    base_url = _resolve_config_value(config.get("base_url"))
+    timeout = _resolve_int_config_value(
+        config.get("timeout_seconds"),
+        DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    )
+    options = config.get("options")
+    resolved = dict(config)
+    resolved["model"] = str(model or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL)
+    resolved["base_url"] = str(
+        base_url or os.environ.get("OLLAMA_BASE_URL") or DEFAULT_OLLAMA_BASE_URL
+    ).rstrip("/")
+    resolved["timeout_seconds"] = max(timeout, 1)
+    resolved["options"] = dict(options) if isinstance(options, dict) else {}
+    return resolved
 
 
 def _http_post_with_retries(
@@ -1123,14 +1164,11 @@ def _call_ollama_rag(system_prompt: str, user_message: str, config: Dict[str, An
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("`requests` library is required for Ollama") from exc
 
-    base_url = str(
-        config.get("base_url")
-        or os.environ.get("OLLAMA_BASE_URL")
-        or DEFAULT_OLLAMA_BASE_URL
-    ).rstrip("/")
-    model = str(
-        config.get("model") or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
-    )
+    config = _resolve_ollama_config(config)
+    base_url = str(config["base_url"])
+    model = str(config["model"])
+    timeout_seconds = int(config["timeout_seconds"])
+    options = dict(config.get("options") or {})
     body: Dict[str, Any] = {
         "model": model,
         "temperature": float(config.get("temperature", 0.1)),
@@ -1140,12 +1178,22 @@ def _call_ollama_rag(system_prompt: str, user_message: str, config: Dict[str, An
         ],
     }
     body.update(_decoding_overrides(config))
+    if options:
+        body["options"] = options
+    _safe_logger_info(
+        "Ollama provider initialized: base_url=%s model=%s timeout_seconds=%s options=%s decoding=%s",
+        base_url,
+        model,
+        timeout_seconds,
+        options,
+        _decoding_overrides(config),
+    )
     try:
         response = requests.post(
             f"{base_url}/v1/chat/completions",
             headers={"Content-Type": "application/json"},
             json=body,
-            timeout=HTTP_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
     except requests.exceptions.ConnectionError as exc:
         logger.warning(

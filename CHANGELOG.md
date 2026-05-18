@@ -20,6 +20,19 @@
   `{sufficient, follow_up, confidence}`. Tests:
   `tests/test_iterative_retriever.py`, `tests/test_ui_modes.py`,
   `tests/test_prompt_loader.py`.
+- **BL-25 (issue #122):** конфигурируемый блок `providers.ollama` в
+  `configs/llm_config.yaml` с `${OLLAMA_*:default}` placeholders для
+  `model`, `base_url`, `timeout_seconds` и локальными `options`
+  (`num_ctx`, `num_thread`, `keep_alive`, `temperature`). `LLMClient`
+  применяет YAML/env значения и централизованный `decoding:` к Ollama
+  RAG-вызовам; дефолтный timeout повышен до 180 секунд для CPU-only АРМ.
+  Документация обновлена в `README.md`, `.env.example` и
+  `docs/standards/llm-behavior.md`; регресс-тест —
+  `tests/test_llm_client.py::test_ollama_config_loading`.
+- **PATCH: dependency hardening (BL-24a, issue #120).** Добавлен
+  `torchvision>=0.18.0` в `requirements.txt`, чтобы optional vision-backends
+  из `transformers` не засоряли Streamlit-логи `ModuleNotFoundError` при
+  чистой установке зависимостей.
 
 ## [0.2.0] - 2026-05-18
 

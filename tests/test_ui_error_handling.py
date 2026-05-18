@@ -138,6 +138,7 @@ def test_retrieve_and_answer_records_generic_error_and_retry_state(monkeypatch) 
     assert st.session_state[app.SESSION_LAST_QUERY_KEY] == "Как настроить SIP?"
     assert st.session_state[app.SESSION_LAST_ERROR_KEY]["run_id"] == "ui-run-123"
     assert st.session_state[app.SESSION_LAST_ERROR_KEY]["error_type"] == "LLMError"
+    assert "report_bytes" in st.session_state[app.SESSION_LAST_ERROR_KEY]
     assert log_calls[-1]["run_id"] == "ui-run-123"
     assert log_calls[-1]["error_type"] == "LLMError"
     assert log_calls[-1]["provider"]
@@ -158,7 +159,10 @@ def test_retry_button_queues_last_query_without_clearing_input(monkeypatch) -> N
         pass
 
     monkeypatch.setattr(app.st, "error", lambda *_a, **_kw: None)
+    monkeypatch.setattr(app.st, "caption", lambda *_a, **_kw: None)
+    monkeypatch.setattr(app.st, "download_button", lambda *_a, **_kw: None)
     monkeypatch.setattr(app.st, "button", lambda *_a, **_kw: True)
+    monkeypatch.setattr(app, "get_debug_error_details", lambda *_a, **_kw: False)
     monkeypatch.setattr(app.st, "rerun", lambda: (_ for _ in ()).throw(RerunRequested()))
 
     with pytest.raises(RerunRequested):
@@ -222,3 +226,42 @@ def test_safe_error_logging_never_breaks_ui(monkeypatch) -> None:
         provider="openrouter",
         exc=LLMError("provider failed"),
     )
+
+
+def test_error_report_download_masks_sensitive_data(monkeypatch) -> None:
+    """Downloaded diagnostics must not leak raw query or exception secrets."""
+    st.session_state.clear()
+    downloads: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        app,
+        "load_llm_config",
+        lambda: {"providers": {"a": {}, "b": {}, "c": {}}},
+    )
+    monkeypatch.setattr(app.st, "error", lambda *_a, **_kw: None)
+    monkeypatch.setattr(app.st, "caption", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        app.st,
+        "download_button",
+        lambda *args, **kwargs: downloads.append({"args": args, "kwargs": kwargs}),
+    )
+    monkeypatch.setattr(app.st, "button", lambda *_a, **_kw: False)
+    monkeypatch.setattr(app, "get_debug_error_details", lambda *_a, **_kw: False)
+
+    app._store_generation_error(
+        query="Свяжитесь с admin@example.com и +71234567890",
+        mode=app.MODE_STATELESS,
+        run_id="run-mask",
+        exc=LLMError("401 token failed for 192.168.1.1 and admin@example.com"),
+        provider="openrouter",
+    )
+    app._render_retry_notice(app.MODE_STATELESS)
+
+    payload = downloads[-1]["kwargs"]["data"].decode("utf-8")
+    assert "admin@example.com" not in payload
+    assert "+71234567890" not in payload
+    assert "192.168.1.1" not in payload
+    assert "[EMAIL]" in payload
+    assert "[PHONE]" in payload
+    assert "[IP]" in payload
+    assert downloads[-1]["kwargs"]["file_name"].startswith("clarify_error_")
