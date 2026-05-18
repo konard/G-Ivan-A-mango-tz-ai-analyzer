@@ -83,6 +83,34 @@ def test_run_analysis_end_to_end(tmp_path: Path) -> None:
     assert (df["[Статус]"] == "Да").all()
 
 
+def test_run_analysis_accepts_docx_input(tmp_path: Path) -> None:
+    docx = pytest.importorskip("docx")
+    input_file = tmp_path / "tz.docx"
+    document = docx.Document()
+    document.add_paragraph("Поддержка интеграции с Битрикс24")
+    document.add_paragraph("Запись звонков")
+    document.save(input_file)
+
+    output_file = tmp_path / "result.xlsx"
+    stats = run_analysis(
+        input_file=str(input_file),
+        output_file=str(output_file),
+        retriever=_build_retriever(),
+        llm_client=_build_fake_llm(),
+    )
+
+    assert stats.total == 2
+    assert stats.success == 2
+    assert stats.errors == 0
+    assert output_file.exists()
+
+    df = pd.read_excel(output_file)
+    assert list(df["Требование"]) == [
+        "Поддержка интеграции с Битрикс24",
+        "Запись звонков",
+    ]
+
+
 def test_run_analysis_propagates_run_id_to_logs_stats_and_export(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

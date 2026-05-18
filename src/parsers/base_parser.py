@@ -2,18 +2,19 @@
 
 The MVP parsers (Excel, DOCX) implement the simple contract::
 
-    load_requirements(path) -> List[Dict[str, Union[int, str]]]
+    load_requirements(path) -> List[Dict[str, Any]]
 
-returning dicts shaped as ``{"id": int, "text": str}``. ``BaseParser`` and
-``ParserError`` provide a thin extension point for the Pilot stage when
-parsers may need shared configuration, logging or post-processing pipelines.
+returning dicts shaped as ``{"id": int, "text": str, "locator": dict}``.
+``BaseParser`` and ``ParserError`` provide a thin extension point for the Pilot
+stage when parsers may need shared configuration, logging or post-processing
+pipelines.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 
 class ParserError(RuntimeError):
@@ -37,7 +38,7 @@ class BaseParser(ABC):
     @abstractmethod
     def load_requirements(
         self, file_path: Union[str, Path]
-    ) -> List[Dict[str, Union[int, str]]]:  # pragma: no cover - abstract
+    ) -> List[Dict[str, Any]]:  # pragma: no cover - abstract
         ...
 
     def _normalize(self, text: str) -> str:

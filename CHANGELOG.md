@@ -12,6 +12,10 @@
   tests verify config loaders read YAML with explicit `encoding="utf-8"` so
   Russian Windows `cp1251` locales do not trigger `UnicodeDecodeError`.
 ### Added
+- **BL-18 (issue #132):** `.docx` ingest is routed through
+  `load_requirements_by_extension()` alongside `.xlsx`; `DocxParser` now emits
+  non-empty `locator` metadata for paragraphs and table cells, and Excel ingest
+  supports multi-sheet workbooks with `sheet_name` in each locator.
 - **MINOR: Multi-hop Retrieval for Consultation mode (BL-11, issue #123).**
   `configs/llm_config.yaml` now exposes `rag.multi_hop_enabled: false`,
   `rag.max_hops: 2`, and `rag.min_confidence_to_stop: 0.8`.
