@@ -1,6 +1,6 @@
 # 🧮 Standard: Embedding Model
 
-**Версия:** 1.5 | **Дата:** 2026-05-18 | **Статус:** Approved
+**Версия:** 1.6 | **Дата:** 2026-05-18 | **Статус:** Approved
 
 ---
 
@@ -39,6 +39,10 @@
 Версия 1.5 (BL-10, issue #137) фиксирует runtime-обвязку
 `ParentAwareRetriever`, порядок применения L2 после multi-hop/query expansion
 и синхронизацию YAML-схемы обязательных parent metadata.
+Версия 1.6 (BL-14, issue #136) добавляет offline dependency extraction:
+явные cross-ссылки, `see also` и предварительные условия сохраняются в
+metadata чанков для будущего multi-hop retrieval и отображения в режиме
+«Консультация».
 
 ### 5.1 Chunking parameters (Sprint 2, BL-06 L1)
 | Параметр | Значение | Источник | Комментарий |
@@ -72,6 +76,10 @@
 | `parent_id` | str | стабильный идентификатор родительского раздела (`source::section_number::section_title`) | BL-10 L2 grouping |
 | `section_id` | str | алиас `parent_id` для совместимости с section-level consumers | BL-10 L2 grouping |
 | `parent_text` | str | полный текст родительского раздела, собранный из L1-чанков | BL-10 LLM context |
+| `related_sections` | str | logical list, encoded as `;`-separated refs (`source.pdf::7.3.6`) | BL-14, Consultation UI |
+| `prerequisites` | str | logical list, encoded as `;`-separated prerequisite snippets | BL-14, prompt context |
+| `see_also` | str | logical list, encoded as `;`-separated explicit references | BL-14, Consultation UI |
+| `dependencies_extracted` | bool | `true`, если offline extraction уже выполнялся для чанка | BL-14 idempotency |
 
 Дополнительное поле `section_fallback` может присутствовать в metadata для
 аудита fallback-стратегии (`none`, `source_filename`). Оно не входит в
@@ -150,6 +158,44 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 одних и тех же разделов внутри каждого wrapper'а и гарантирует, что режим
 «Анализ ТЗ» остаётся на L1-контексте даже при включённых L2-флагах в коде.
 
+### 5.7 Offline Dependency Extraction (BL-14)
+BL-14 добавляет offline-процесс извлечения зависимостей и cross-ссылок из
+текста чанков. Основной артефакт — `scripts/tools/extract_dependencies.py`.
+
+Контракт:
+- Скрипт читает существующую ChromaDB-коллекцию, обогащает metadata и вызывает
+  `collection.update()`; повторный запуск идемпотентен и пропускает чанки с
+  `dependencies_extracted=true`, если не указан `--force`.
+- По умолчанию используется deterministic regex-first extraction: маркеры
+  `см. раздел`, `см. пункт`, `см. также`, `требуется`, `необходимо`,
+  `предварительная настройка`, `зависит от`.
+- Локальный Ollama включается только явно через `--use-ollama` в standalone
+  скрипте или `--dependency-use-ollama` в indexer integration. Рекомендуемые
+  модели: `qwen2.5:7b-instruct-q4_K_M` или совместимая `llama3.3:8b` с
+  температурой `0.0`.
+- ChromaDB metadata хранит только scalar values, поэтому logical lists
+  `related_sections`, `prerequisites`, `see_also` кодируются как
+  `;`-separated строки. UI и prompt builder декодируют их на границе
+  отображения/контекста.
+
+Запуск поверх существующего индекса:
+
+```bash
+python scripts/tools/extract_dependencies.py --force
+```
+
+Интеграция в полный reindex:
+
+```bash
+python knowledge_base/indexing/build_index.py --extract-dependencies
+```
+
+Quality gate для offline-прогона можно включить флагом
+`--min-related-coverage 0.6` (standalone) или
+`--dependency-min-related-coverage 0.6` (indexer). Scope issue #136 не требует
+коммитить результат полного прогона по production KB; он выполняется после
+мержа вместе с reindex.
+
 ## 6. Operational Notes
 - Конфигурация модели задаётся в `configs/` (имя модели, размерность, устройство исполнения) и не требует изменения кода RAG-пайплайна.
 - Любая смена модели сопровождается обновлением этого файла (увеличение версии) и заметкой в `CHANGELOG.md`.
@@ -172,3 +218,4 @@ NFR-05 (0 утечек), см. [`docs/audit/data-masking_v1.md`](../audit/data-m
 | 1.3 | 2026-05-17 | BL-02 hardening (issue #109): добавлены `section_inherited`, section propagation с page-distance reset, fallback по имени документа и MVP-порог `metadata_coverage_min: 0.65`. |
 | 1.4 | 2026-05-18 | BL-10 (issue #118): добавлены `parent_id`, `section_id`, `parent_text`, флаги `use_parent_context` / `parent_context_max_chars` и L2 Parent Document Retrieval для режима «Консультация». |
 | 1.5 | 2026-05-18 | BL-10 (issue #137): закреплены `ParentAwareRetriever`, применение L2 после multi-hop/query expansion и синхронизация `required_metadata` в YAML с parent-полями индексатора. |
+| 1.6 | 2026-05-18 | BL-14 (issue #136): добавлены `related_sections`, `prerequisites`, `see_also`, `dependencies_extracted`, standalone offline extractor, опциональная интеграция в `build_index.py` и отображение cross-ссылок в режиме «Консультация». |

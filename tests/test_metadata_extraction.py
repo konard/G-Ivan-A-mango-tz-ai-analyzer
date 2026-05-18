@@ -43,6 +43,10 @@ def test_required_metadata_keys_include_section_audit_flag() -> None:
         "parent_id",
         "section_id",
         "parent_text",
+        "related_sections",
+        "prerequisites",
+        "see_also",
+        "dependencies_extracted",
     )
 
 
@@ -110,6 +114,10 @@ def test_build_chunk_metadata_emits_all_required_keys() -> None:
     assert "Битрикс24" in meta["section_title"]
     assert meta["product"] == "VPBX API"
     assert meta["section_inherited"] is False
+    assert meta["related_sections"] == ""
+    assert meta["prerequisites"] == ""
+    assert meta["see_also"] == ""
+    assert meta["dependencies_extracted"] is False
 
 
 def test_build_chunk_metadata_falls_back_for_unknown_product() -> None:

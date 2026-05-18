@@ -17,6 +17,7 @@ is no duplicate ``chunk_config.yaml`` under ``knowledge_base/indexing``.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
@@ -58,6 +59,10 @@ REQUIRED_METADATA_KEYS: Tuple[str, ...] = (
     "parent_id",
     "section_id",
     "parent_text",
+    "related_sections",
+    "prerequisites",
+    "see_also",
+    "dependencies_extracted",
 )
 
 COVERAGE_METADATA_KEYS: Tuple[str, ...] = (
@@ -454,6 +459,10 @@ def build_chunk_metadata(
         "parent_id": parent_id,
         "section_id": parent_id,
         "parent_text": "",
+        "related_sections": "",
+        "prerequisites": "",
+        "see_also": "",
+        "dependencies_extracted": False,
     }
 
 
@@ -557,7 +566,39 @@ def _metadata_value_present(meta: Dict[str, Any], key: str) -> bool:
     return value not in (None, "")
 
 
-def main() -> int:
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--extract-dependencies",
+        action="store_true",
+        help="Enrich chunk metadata with BL-14 dependency/cross-reference fields.",
+    )
+    parser.add_argument(
+        "--dependency-use-ollama",
+        action="store_true",
+        help="Use local Ollama in addition to regex dependency extraction.",
+    )
+    parser.add_argument(
+        "--dependency-ollama-base-url",
+        default="http://localhost:11434",
+        help="Base URL for local Ollama when --dependency-use-ollama is set.",
+    )
+    parser.add_argument(
+        "--dependency-ollama-model",
+        default="qwen2.5:7b-instruct-q4_K_M",
+        help="Ollama model for dependency extraction.",
+    )
+    parser.add_argument(
+        "--dependency-min-related-coverage",
+        type=float,
+        default=0.0,
+        help="Fail when related_sections coverage for marker chunks is below this ratio.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = parse_args(argv)
     run_id = str(uuid.uuid4())
     logger = setup_logging(run_id)
     logger.info("KB indexing started (run_id=%s)", run_id)
@@ -571,6 +612,19 @@ def main() -> int:
     )
     product_map = load_product_map()
     chunker = build_chunker()
+    dependency_settings = None
+    dependency_stats = None
+    dependency_helpers = None
+    if args.extract_dependencies:
+        sys.path.insert(0, str(BASE_DIR))
+        from scripts.tools import extract_dependencies as dependency_helpers
+
+        dependency_settings = dependency_helpers.ExtractionSettings(
+            use_ollama=args.dependency_use_ollama,
+            ollama_base_url=args.dependency_ollama_base_url,
+            ollama_model=args.dependency_ollama_model,
+        )
+        dependency_stats = dependency_helpers.ExtractionStats()
 
     if not SOURCES_DIR.exists():
         logger.error("Sources directory not found: %s", SOURCES_DIR)
@@ -626,6 +680,19 @@ def main() -> int:
                     product_map=product_map,
                     section_state=section_state,
                 )
+                if dependency_helpers is not None and dependency_settings is not None:
+                    dependency_stats.total_chunks += 1
+                    dependency_stats.processed_chunks += 1
+                    has_markers = dependency_helpers.contains_dependency_markers(chunk)
+                    if has_markers:
+                        dependency_stats.chunks_with_markers += 1
+                    meta = dependency_helpers.enrich_metadata(
+                        meta,
+                        chunk,
+                        settings=dependency_settings,
+                    )
+                    if has_markers and meta.get("related_sections"):
+                        dependency_stats.chunks_with_related_sections += 1
                 ids.append(f"{path.stem}__{chunk_counter}")
                 docs.append(chunk)
                 metadatas.append(meta)
@@ -677,6 +744,20 @@ def main() -> int:
             coverage,
             metadata_coverage_min,
         )
+
+    if dependency_stats is not None:
+        logger.info("Dependency extraction stats: %s", dependency_stats.to_dict())
+        if (
+            dependency_stats.chunks_with_markers > 0
+            and dependency_stats.related_section_coverage
+            < float(args.dependency_min_related_coverage)
+        ):
+            logger.error(
+                "Dependency related_sections coverage %.4f is below threshold %.4f.",
+                dependency_stats.related_section_coverage,
+                float(args.dependency_min_related_coverage),
+            )
+            return 3
 
     logger.info("Embedding %d chunks", len(docs))
     embeddings = embedder.encode(docs, show_progress_bar=False).tolist()

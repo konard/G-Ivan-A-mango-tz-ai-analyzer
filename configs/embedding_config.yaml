@@ -68,6 +68,10 @@ required_metadata:
   - parent_id
   - section_id
   - parent_text
+  - related_sections
+  - prerequisites
+  - see_also
+  - dependencies_extracted
 
 # MVP threshold for the fraction of chunks with complete searchable metadata
 # (`source`, `chunk_idx`, `page_number`, `section_title`, `section_number`,

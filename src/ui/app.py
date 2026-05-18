@@ -425,6 +425,55 @@ def _section_signature(metadata: Dict[str, Any]) -> str:
     return title
 
 
+def _metadata_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_items = [str(item) for item in value]
+    else:
+        raw_items = str(value).split(";")
+    seen = set()
+    items: List[str] = []
+    for raw in raw_items:
+        item = re.sub(r"\s+", " ", raw or "").strip(" \t\r\n,;")
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        items.append(item)
+    return items
+
+
+def _format_dependency_context(metadata: Dict[str, Any]) -> str:
+    related = _metadata_list(metadata.get("related_sections"))
+    prerequisites = _metadata_list(metadata.get("prerequisites"))
+    see_also = _metadata_list(metadata.get("see_also"))
+    lines: List[str] = []
+    if prerequisites:
+        lines.append("Предварительные условия: " + "; ".join(prerequisites))
+    if related:
+        lines.append("Связанные разделы: " + "; ".join(related))
+    if see_also:
+        lines.append("См. также: " + "; ".join(see_also))
+    return "\n".join(lines)
+
+
+def _format_dependency_summary(metadata: Dict[str, Any]) -> str:
+    related = _metadata_list(metadata.get("related_sections"))
+    prerequisites = _metadata_list(metadata.get("prerequisites"))
+    see_also = _metadata_list(metadata.get("see_also"))
+    if not (related or prerequisites or see_also):
+        return ""
+
+    parts: List[str] = []
+    if prerequisites:
+        parts.append("**Предварительные условия:** " + ", ".join(prerequisites))
+    if related:
+        parts.append("**Связанные разделы:** " + ", ".join(related))
+    if see_also:
+        parts.append("**См. также:** " + ", ".join(see_also))
+    return "\n\n".join(parts)
+
+
 def _first_citation_meta_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Pick page/section metadata from the highest-ranked chunk per source."""
     mapping: Dict[str, Dict[str, Any]] = {}
@@ -492,7 +541,9 @@ def _format_context(chunks: List[Dict[str, Any]]) -> str:
         page_label = f" стр. {page}" if page else ""
         section_label = _section_signature(meta)
         section_suffix = f" {section_label}" if section_label else ""
-        blocks.append(f"[{idx}] {source}{page_label}{section_suffix}{suffix}\n{text}")
+        dependency_context = _format_dependency_context(meta)
+        body = f"{dependency_context}\n{text}" if dependency_context else text
+        blocks.append(f"[{idx}] {source}{page_label}{section_suffix}{suffix}\n{body}")
     return "\n\n".join(blocks)
 
 
@@ -641,6 +692,9 @@ def render_chunks(chunks: List[Dict[str, Any]], debug: bool) -> None:
                         section_signature=section_signature,
                     )
                 )
+            dependency_summary = _format_dependency_summary(meta)
+            if dependency_summary:
+                st.markdown(dependency_summary)
             st.markdown("**Snippet**")
             st.write(truncate(chunk.get("text", "")))
             st.caption(

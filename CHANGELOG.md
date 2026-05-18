@@ -24,6 +24,15 @@
   with `parent_id` / `section_id` / `parent_text`.
 
 ### Added
+- **BL-14 (issue #136):** Offline Dependency Extraction for KB chunks.
+  `scripts/tools/extract_dependencies.py` enriches ChromaDB metadata with
+  `related_sections`, `prerequisites`, `see_also`, and
+  `dependencies_extracted` using deterministic regex extraction by default and
+  optional local Ollama enrichment via `--use-ollama`. `build_index.py` exposes
+  `--extract-dependencies` / `--dependency-use-ollama`, and the KB UI decodes
+  the metadata into prompt context plus visible «См. также» / prerequisites in
+  source chunk expanders. Tests: `tests/test_extract_dependencies.py`,
+  `tests/test_metadata_extraction.py`, `tests/test_citation_links.py`.
 - **BL-18 (issue #132):** `.docx` ingest is routed through
   `load_requirements_by_extension()` alongside `.xlsx`; `DocxParser` now emits
   non-empty `locator` metadata for paragraphs and table cells, and Excel ingest

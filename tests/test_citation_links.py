@@ -193,3 +193,19 @@ def test_ui_config_contains_citation_settings() -> None:
     cfg = app.get_citations_config()
     assert cfg["base_url"] == "http://localhost:8000/docs"
     assert cfg["source_dir"].name == "sources"
+
+
+def test_format_dependency_summary_renders_see_also_metadata() -> None:
+    summary = app._format_dependency_summary(
+        {
+            "related_sections": "doc.pdf::7.3.6;doc.pdf::7.3.7",
+            "prerequisites": "предварительная настройка SIP",
+            "see_also": "doc.pdf::9.1",
+            "dependencies_extracted": True,
+        }
+    )
+
+    assert "См. также" in summary
+    assert "doc.pdf::7.3.6" in summary
+    assert "doc.pdf::9.1" in summary
+    assert "Предварительные условия" in summary
