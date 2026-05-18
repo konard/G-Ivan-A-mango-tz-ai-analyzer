@@ -31,7 +31,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from src.exporters.excel_exporter import save_results
 from src.llm.client import LLMClient, LLMError
 from src.llm.masking import sanitize_log_record
-from src.parsers.excel_parser import load_requirements
+from src.parsers import load_requirements_by_extension
 from src.rag.retriever import HybridRetriever, build_retriever
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,7 @@ def run_analysis(
     configure_json_logging(run_id=run_id)
     logger.info("Pipeline started: input=%s output=%s", input_file, output_file)
 
-    requirements = load_requirements(input_file, run_id=run_id)
+    requirements = load_requirements_by_extension(input_file, run_id=run_id)
 
     if retriever is None:
         kb_docs = list(documents) if documents is not None else _read_knowledge_base(Path(kb_dir))
@@ -279,6 +279,7 @@ def run_analysis(
                 {
                     "id": req["id"],
                     "text": req_text,
+                    "locator": req.get("locator"),
                     "chunks": chunks,
                     "classification": classification.to_dict(),
                 }
@@ -302,6 +303,7 @@ def run_analysis(
                 {
                     "id": req["id"],
                     "text": req_text,
+                    "locator": req.get("locator"),
                     "error": str(exc),
                     "classification": {
                         "classification": "Ошибка",

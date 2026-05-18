@@ -17,3 +17,10 @@ def test_transformers_vision_backend_dependency_is_explicit() -> None:
 
     assert "torchvision" in requirements
     assert requirements["torchvision"] == "torchvision>=0.18.0"
+
+
+def test_docx_runtime_dependency_is_explicit() -> None:
+    requirements = _runtime_requirements()
+
+    assert "python-docx" in requirements
+    assert requirements["python-docx"] == "python-docx>=1.0.0"

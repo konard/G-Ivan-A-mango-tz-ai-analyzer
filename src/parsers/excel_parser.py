@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from src.parsers.base_parser import BaseParser
 
 try:
     import pandas as pd
@@ -30,6 +32,7 @@ REQUIREMENT_COLUMN_CANDIDATES_DEFAULT = [
     "requirement",
     "Текст требования",
     "Описание",
+    "Поля, обязательные для заполнения",
     "Суть",
     "Наименование",
     "Description",
@@ -175,22 +178,94 @@ def _detect_requirement_column(
         if candidate in df.columns:
             return candidate
 
-    # Fallback: first column whose values are mostly non-empty strings.
+    # Fallback: the richest text column. Real tender sheets often put numbering
+    # before descriptions, so picking the first textual column loses data.
+    best_column: Optional[str] = None
+    best_score: tuple[int, float] = (0, 0.0)
     for column in df.columns:
         series = df[column].dropna()
         if series.empty:
             continue
-        if series.map(lambda v: isinstance(v, str) and v.strip()).any():
-            logger.warning(
-                "No standard requirement column found; using fallback column '%s'.",
-                column,
-                extra=log_extra or {},
-            )
-            return column
+        values = [
+            str(value).strip()
+            for value in series.tolist()
+            if str(value).strip() and str(value).strip().lower() != "nan"
+        ]
+        valid_values = [
+            value for value in values if len(value) >= BaseParser.DEFAULT_MIN_LENGTH
+        ]
+        if not valid_values:
+            continue
+        score = (
+            len(valid_values),
+            sum(len(value) for value in valid_values) / len(valid_values),
+        )
+        if score > best_score:
+            best_score = score
+            best_column = str(column)
+
+    if best_column is not None:
+        logger.warning(
+            "No standard requirement column found; using fallback column '%s'.",
+            best_column,
+            extra=log_extra or {},
+        )
+        return best_column
 
     raise ExcelParseError(
         "No requirement column found. Expected one of: " + ", ".join(keywords)
     )
+
+
+def _sheet_display_name(workbook: "pd.ExcelFile", sheet_ref: Union[str, int]) -> str:
+    if isinstance(sheet_ref, int):
+        try:
+            return str(workbook.sheet_names[sheet_ref])
+        except IndexError:
+            return str(sheet_ref)
+    return str(sheet_ref)
+
+
+def _read_sheet_frames(
+    path: Path,
+    sheet_name: Optional[Union[str, int]],
+    *,
+    log_extra: Dict[str, Any],
+    run_id: Optional[str],
+) -> List[Tuple[str, "pd.DataFrame"]]:
+    try:
+        workbook = pd.ExcelFile(path)
+    except Exception as exc:  # pandas wraps many parser errors
+        logger.error("Failed to read Excel file %s: %s", path, exc, extra=log_extra)
+        raise ExcelParseError(f"Failed to read Excel file {path}: {exc}", run_id) from exc
+
+    sheet_refs: List[Union[str, int]]
+    if sheet_name is None:
+        sheet_refs = list(workbook.sheet_names)
+    else:
+        sheet_refs = [sheet_name]
+
+    frames: List[Tuple[str, "pd.DataFrame"]] = []
+    try:
+        for sheet_ref in sheet_refs:
+            try:
+                df = pd.read_excel(workbook, sheet_name=sheet_ref)
+            except Exception as exc:  # pandas wraps many parser errors
+                logger.error(
+                    "Failed to read Excel sheet %s in %s: %s",
+                    sheet_ref,
+                    path,
+                    exc,
+                    extra=log_extra,
+                )
+                raise ExcelParseError(
+                    f"Failed to read Excel sheet {sheet_ref!r} in {path}: {exc}",
+                    run_id,
+                ) from exc
+            frames.append((_sheet_display_name(workbook, sheet_ref), df))
+    finally:
+        workbook.close()
+    return frames
 
 
 def load_requirements(
@@ -199,7 +274,7 @@ def load_requirements(
     column: Optional[str] = None,
     config_path: Optional[Union[str, Path]] = None,
     run_id: Optional[str] = None,
-) -> List[Dict[str, Union[int, str]]]:
+) -> List[Dict[str, Any]]:
     """Load tender requirements from an Excel workbook.
 
     Args:
@@ -214,7 +289,7 @@ def load_requirements(
             берётся из пайплайна, что обеспечивает сквозную трассировку.
 
     Returns:
-        A list of dictionaries shaped as ``{"id": int, "text": str}``.
+        A list of dictionaries shaped as ``{"id": int, "text": str, "locator": dict}``.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -233,69 +308,85 @@ def load_requirements(
         logger.error("Excel file is empty: %s", path, extra=log_extra)
         raise ExcelParseError(f"Excel file is empty: {path}", run_id)
 
-    try:
-        df = pd.read_excel(path, sheet_name=sheet_name)
-    except Exception as exc:  # pandas wraps many parser errors
-        logger.error("Failed to read Excel file %s: %s", path, exc, extra=log_extra)
-        raise ExcelParseError(f"Failed to read Excel file {path}: {exc}", run_id) from exc
-
-    if df.empty:
-        logger.error("Excel sheet is empty: %s", path, extra=log_extra)
-        raise ExcelParseError(f"Excel sheet is empty: {path}", run_id)
-
     keywords = config.get("column_keywords", REQUIREMENT_COLUMN_CANDIDATES_DEFAULT)
-    target_column = column or _detect_requirement_column(df, keywords, log_extra=log_extra)
-    if target_column not in df.columns:
-        logger.error(
-            "Column '%s' is not present in %s. Available columns: %s",
-            target_column,
-            path,
-            list(df.columns),
-            extra=log_extra,
-        )
-        raise ExcelParseError(
-            f"Column '{target_column}' is not present in {path}. "
-            f"Available columns: {list(df.columns)}",
-            run_id,
-        )
-
     text_config = config.get("text_processing", {})
     do_trim = text_config.get("trim", True)
     do_lowercase = text_config.get("lowercase", False)
     remove_empty = text_config.get("remove_empty", True)
     min_length = text_config.get("min_length", 5)
 
-    requirements: List[Dict[str, Union[int, str]]] = []
-    for idx, raw_value in enumerate(df[target_column].tolist(), start=1):
-        if raw_value is None:
-            continue
-        text = str(raw_value)
-        if do_trim:
-            text = text.strip()
-        if do_lowercase:
-            text = text.lower()
-        if remove_empty and (not text or text.lower() == "nan"):
-            continue
-        if len(text) < min_length:
+    sheet_frames = _read_sheet_frames(
+        path, sheet_name, log_extra=log_extra, run_id=run_id
+    )
+
+    requirements: List[Dict[str, Any]] = []
+    for current_sheet_name, df in sheet_frames:
+        if df.empty:
             logger.warning(
-                "Requirement %d is too short (%d chars), skipping: %s",
-                idx,
+                "Excel sheet is empty: %s!%s", path, current_sheet_name, extra=log_extra
+            )
+            continue
+
+        target_column = column or _detect_requirement_column(
+            df, keywords, log_extra=log_extra
+        )
+        if target_column not in df.columns:
+            logger.error(
+                "Column '%s' is not present in %s!%s. Available columns: %s",
+                target_column,
+                path,
+                current_sheet_name,
+                list(df.columns),
+                extra=log_extra,
+            )
+            raise ExcelParseError(
+                f"Column '{target_column}' is not present in {path}!{current_sheet_name}. "
+                f"Available columns: {list(df.columns)}",
+                run_id,
+            )
+
+        for row_number, raw_value in enumerate(df[target_column].tolist(), start=2):
+            if raw_value is None:
+                continue
+            text = str(raw_value)
+            if do_trim:
+                text = text.strip()
+            if do_lowercase:
+                text = text.lower()
+            if remove_empty and (not text or text.lower() == "nan"):
+                continue
+            if len(text) >= min_length:
+                requirements.append(
+                    {
+                        "id": len(requirements) + 1,
+                        "text": text,
+                        "locator": {
+                            "type": "cell",
+                            "sheet_name": current_sheet_name,
+                            "row": row_number,
+                            "column": str(target_column),
+                        },
+                    }
+                )
+                continue
+            logger.warning(
+                "Requirement in %s!%s row %d is too short (%d chars), skipping: %s",
+                path,
+                current_sheet_name,
+                row_number,
                 len(text),
                 text[:50],
                 extra=log_extra,
             )
-            continue
-        requirements.append({"id": idx, "text": text})
 
     if not requirements:
         logger.error(
-            "Column '%s' in %s does not contain any valid requirements.",
-            target_column,
+            "Excel workbook %s does not contain any valid requirements.",
             path,
             extra=log_extra,
         )
         raise ExcelParseError(
-            f"Column '{target_column}' in {path} does not contain any non-empty values.",
+            f"Excel workbook {path} does not contain any non-empty values.",
             run_id,
         )
 
@@ -303,3 +394,30 @@ def load_requirements(
         "Loaded %d requirements from %s", len(requirements), path, extra=log_extra
     )
     return requirements
+
+
+class ExcelParser(BaseParser):
+    """Parser object used by the extension dispatcher."""
+
+    def __init__(
+        self,
+        *,
+        sheet_name: Optional[Union[str, int]] = 0,
+        column: Optional[str] = None,
+        config_path: Optional[Union[str, Path]] = None,
+        run_id: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.sheet_name = sheet_name
+        self.column = column
+        self.config_path = config_path
+        self.run_id = run_id
+
+    def load_requirements(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+        return load_requirements(
+            file_path,
+            sheet_name=self.sheet_name,
+            column=self.column,
+            config_path=self.config_path,
+            run_id=self.run_id,
+        )
