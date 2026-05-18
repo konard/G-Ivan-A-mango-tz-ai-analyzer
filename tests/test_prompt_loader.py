@@ -30,6 +30,9 @@ EXPECTED_CLASSIFIER_SHA = (
 EXPECTED_RAG_SHA = (
     "a0339756d33cbbb32a461b7dbd88e72d2d7e60ec3c3660c68f052783a19614a4"
 )
+EXPECTED_RAG_REFLECTION_SHA = (
+    "7b5541188306f089f4fbd2c0f263abb4d95731fe8bb63c3d638b83bf8132d9ed"
+)
 EXPECTED_FEW_SHOT_SHA = (
     "78079ef0b7110ba87d396af51dd7be55ea6ae4aa99f9472c9d8fbb344a0fd346"
 )
@@ -77,6 +80,16 @@ def test_load_prompt_system_rag_real_file() -> None:
     assert info.sha256 == EXPECTED_RAG_SHA
     assert "<context>" in info.content
     assert "<question>" in info.content
+
+
+def test_load_prompt_system_rag_reflection_real_file() -> None:
+    info = load_prompt(
+        "system_rag_reflection", version="v1.0", prompts_dir=REPO_PROMPTS
+    )
+    assert info.sha256 == EXPECTED_RAG_REFLECTION_SHA
+    assert '"sufficient"' in info.content
+    assert '"follow_up"' in info.content
+    assert '"confidence"' in info.content
 
 
 def test_load_prompt_prefers_md_then_txt(tmp_path: Path) -> None:

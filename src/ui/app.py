@@ -80,6 +80,8 @@ MODE_LABELS: Dict[str, str] = {
 }
 MODE_ORDER: List[str] = [MODE_STATELESS, MODE_CONSULTATION]
 DEFAULT_MAX_HISTORY_MESSAGES = 6
+DEFAULT_MULTI_HOP_MAX_HOPS = 2
+DEFAULT_MULTI_HOP_MIN_CONFIDENCE_TO_STOP = 0.8
 # ~4 characters per token is a reasonable upper-bound proxy for Russian +
 # Cyrillic text. We log this as a guard against unbounded prompt growth; the
 # real provider tokeniser may differ but the trend (and the relative impact
@@ -113,11 +115,18 @@ SESSION_LAST_ANALYSIS_RESULT_KEY = "last_analysis_result"
 # the install rather than edit the constant.
 _SYSTEM_PROMPT_NAME = "system_rag"
 _SYSTEM_PROMPT_VERSION = "v1.0"
+_REFLECTION_PROMPT_NAME = "system_rag_reflection"
+_REFLECTION_PROMPT_VERSION = "v1.0"
 _SYSTEM_PROMPT_FALLBACK = (
     "You are an assistant for the Clarify Engine knowledge base. "
     "Answer using ONLY the provided context chunks. "
     "Quote source filenames in square brackets when you rely on a chunk. "
     "Respond in Markdown."
+)
+_REFLECTION_PROMPT_FALLBACK = (
+    "You judge whether retrieved context is sufficient to answer a question. "
+    "Do not answer the question. Return only strict JSON with keys "
+    "sufficient, follow_up, confidence."
 )
 
 
@@ -237,16 +246,59 @@ def get_rag_system_prompt() -> str:
         return _SYSTEM_PROMPT_FALLBACK
 
 
+@st.cache_resource(show_spinner=False)
+def get_rag_reflection_prompt() -> str:
+    """Return the BL-11 reflection prompt from the versioned prompt library."""
+    from src.llm.prompt_loader import PromptNotFoundError, load_prompt
+
+    try:
+        return load_prompt(
+            _REFLECTION_PROMPT_NAME,
+            version=_REFLECTION_PROMPT_VERSION,
+            prompts_dir=PROJECT_ROOT / "prompts",
+        ).content
+    except PromptNotFoundError:
+        st.warning(
+            "System prompt prompts/system_rag_reflection_v1.0.md not found — "
+            "using minimal fallback."
+        )
+        return _REFLECTION_PROMPT_FALLBACK
+
+
 # ----------------------------------------------------------------- retrieval --
 def search_kb(
     query: str,
     top_k: int,
     *,
     use_parent_context: bool = False,
+    ui_mode: str = MODE_STATELESS,
+    llm_config: Optional[Dict[str, Any]] = None,
     enable_query_expansion: bool = False,
 ) -> List[Dict[str, Any]]:
     """Run a vector search and return chunk dicts ordered by similarity."""
-    retriever = get_retriever()
+    from src.rag.retriever import get_retriever
+
+    base_retriever = get_retriever()
+    active_retriever = base_retriever
+
+    multi_hop = resolve_multi_hop_settings(llm_config, ui_mode)
+    if multi_hop["enabled"]:
+        from src.rag.retriever import IterativeRetriever
+
+        def _reflection_call(user_prompt: str) -> str:
+            client = get_llm_client()
+            return client.generate_rag_response(
+                get_rag_reflection_prompt(),
+                user_prompt,
+            )
+
+        active_retriever = IterativeRetriever(
+            active_retriever,
+            reflection_call=_reflection_call,
+            max_hops=int(multi_hop["max_hops"]),
+            min_confidence_to_stop=float(multi_hop["min_confidence_to_stop"]),
+        )
+
     if enable_query_expansion:
         from src.rag.query_expansion import (
             QueryExpansionConfig,
@@ -254,18 +306,20 @@ def search_kb(
         )
         from src.rag.retriever import load_embedding_config
 
-        expansion_config = getattr(retriever, "config", None)
+        expansion_config = getattr(base_retriever, "config", None)
         if not isinstance(expansion_config, dict):
             expansion_config = load_embedding_config(str(EMBEDDING_CONFIG_PATH))
+
         if QueryExpansionConfig.from_mapping(expansion_config).enabled:
-            retriever = QueryExpansionRetriever(
-                retriever,
+            active_retriever = QueryExpansionRetriever(
+                active_retriever,
                 get_llm_client(),
                 config=expansion_config,
                 prompts_dir=PROJECT_ROOT / "prompts",
             )
+
     try:
-        chunks = retriever.search(
+        chunks = active_retriever.search(
             query,
             top_k=top_k,
             use_parent_context=use_parent_context,
@@ -273,12 +327,17 @@ def search_kb(
     except Exception as exc:  # noqa: BLE001
         raise KBError(f"ChromaDB query failed: {exc}") from exc
     if not chunks:
+        collection_name = getattr(base_retriever, "collection_name", "unknown")
+        persist_directory = getattr(base_retriever, "persist_directory", "unknown")
         raise KBError(
-            f"Collection '{retriever.collection_name}' at "
-            f"'{retriever.persist_directory}' returned no results. Make sure "
+            f"Collection '{collection_name}' at "
+            f"'{persist_directory}' returned no results. Make sure "
             "the index is built: `python knowledge_base/indexing/build_index.py`."
         )
     return chunks
+
+
+search_vector_store = search_kb
 
 
 # ------------------------------------------------------------- BL-09 citations --
@@ -457,6 +516,41 @@ def get_max_history_messages(llm_config: Optional[Dict[str, Any]] = None) -> int
     except (TypeError, ValueError):
         return DEFAULT_MAX_HISTORY_MESSAGES
     return max(0, value)
+
+
+def resolve_multi_hop_settings(
+    llm_config: Optional[Dict[str, Any]],
+    ui_mode: str,
+) -> Dict[str, Any]:
+    """Resolve BL-11 multi-hop config with the Consultation-mode hard lock."""
+    cfg = llm_config or {}
+    rag_cfg = cfg.get("rag") if isinstance(cfg, dict) else None
+    if not isinstance(rag_cfg, dict):
+        rag_cfg = {}
+
+    try:
+        max_hops = int(rag_cfg.get("max_hops", DEFAULT_MULTI_HOP_MAX_HOPS))
+    except (TypeError, ValueError):
+        max_hops = DEFAULT_MULTI_HOP_MAX_HOPS
+    max_hops = max(1, max_hops)
+
+    try:
+        min_confidence = float(
+            rag_cfg.get(
+                "min_confidence_to_stop",
+                DEFAULT_MULTI_HOP_MIN_CONFIDENCE_TO_STOP,
+            )
+        )
+    except (TypeError, ValueError):
+        min_confidence = DEFAULT_MULTI_HOP_MIN_CONFIDENCE_TO_STOP
+    min_confidence = min(1.0, max(0.0, min_confidence))
+
+    enabled = bool(rag_cfg.get("multi_hop_enabled", False))
+    return {
+        "enabled": enabled and ui_mode == MODE_CONSULTATION,
+        "max_hops": max_hops,
+        "min_confidence_to_stop": min_confidence,
+    }
 
 
 def trim_history(
@@ -1199,6 +1293,7 @@ def _retrieve_and_answer(
     Streamlit can render the partial state already written via ``st.error``.
     """
     st.session_state[SESSION_LAST_QUERY_KEY] = query.strip()
+    llm_config = load_llm_config()
 
     try:
         with st.spinner("Searching knowledge base…"):
@@ -1206,6 +1301,8 @@ def _retrieve_and_answer(
                 query,
                 top_k,
                 use_parent_context=(mode == MODE_CONSULTATION),
+                ui_mode=mode,
+                llm_config=llm_config,
                 enable_query_expansion=(mode == MODE_CONSULTATION),
             )
     except _generation_error_types() as exc:
@@ -1226,7 +1323,6 @@ def _retrieve_and_answer(
             provider="knowledge_base",
         )
         return None, [], ""
-
     prompt = build_user_prompt(query, chunks, history=history)
     prompt_tokens = estimate_token_count(prompt)
     history_msgs = len(history) if history else 0

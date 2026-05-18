@@ -16,6 +16,19 @@
   `load_requirements_by_extension()` alongside `.xlsx`; `DocxParser` now emits
   non-empty `locator` metadata for paragraphs and table cells, and Excel ingest
   supports multi-sheet workbooks with `sheet_name` in each locator.
+- **MINOR: Multi-hop Retrieval for Consultation mode (BL-11, issue #123).**
+  `configs/llm_config.yaml` now exposes `rag.multi_hop_enabled: false`,
+  `rag.max_hops: 2`, and `rag.min_confidence_to_stop: 0.8`.
+  `src/rag/retriever.py::IterativeRetriever` wraps the existing hybrid
+  retriever with bounded follow-up retrieval, cross-hop deduplication by
+  `(source, chunk_idx)`, and graceful fallback to the accumulated context when
+  reflection times out, fails, or returns invalid JSON. `src/ui/app.py`
+  hard-locks this path to «Консультация»; «Анализ ТЗ» ignores the flag and
+  remains one-shot retrieval. Reflection uses
+  `prompts/system_rag_reflection_v1.0.md` with strict JSON output
+  `{sufficient, follow_up, confidence}`. Tests:
+  `tests/test_iterative_retriever.py`, `tests/test_ui_modes.py`,
+  `tests/test_prompt_loader.py`.
 - **BL-12 (issue #124):** Query Expansion для режима «Консультация»:
   `QueryExpansionRetriever` генерирует 3–4 семантические переформулировки
   через `prompts/system_rag_query_expansion_v1.md`, выполняет retrieval по

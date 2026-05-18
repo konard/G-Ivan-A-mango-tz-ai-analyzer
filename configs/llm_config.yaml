@@ -31,6 +31,15 @@ mask_rag_context: true
 ui:
   max_history_messages: 6
 
+# --- Multi-hop retrieval (BL-11, issue #123) ---------------------------------
+# Global opt-in is disabled by default. src/ui/app.py hard-locks this feature
+# to "Консультация" mode, so batch "Анализ ТЗ" runs keep their one-shot
+# retrieval latency even when experiments turn the flag on.
+rag:
+  multi_hop_enabled: false
+  max_hops: 2
+  min_confidence_to_stop: 0.8
+
 providers:
   openrouter:
     priority: 1
