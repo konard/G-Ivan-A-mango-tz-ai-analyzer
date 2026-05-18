@@ -6,7 +6,11 @@
 
 ## [Unreleased]
 
-(сюда будут идти следующие изменения)
+### Fixed
+- **PATCH: Windows UTF-8 config compatibility (BL-26, issue #125).**
+  YAML/Markdown/Python text attributes are pinned to UTF-8/LF and regression
+  tests verify config loaders read YAML with explicit `encoding="utf-8"` so
+  Russian Windows `cp1251` locales do not trigger `UnicodeDecodeError`.
 
 ## [0.2.0] - 2026-05-18
 
