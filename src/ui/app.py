@@ -275,8 +275,13 @@ def search_kb(
     llm_config: Optional[Dict[str, Any]] = None,
     enable_query_expansion: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Run a vector search and return chunk dicts ordered by similarity."""
-    from src.rag.retriever import get_retriever
+    """Run retrieval wrappers and return ranked KB context chunks.
+
+    Consultation mode can enable optional wrappers, but the final caller-facing
+    contract stays stable: search child chunks first, then expand to parent
+    sections only when explicitly requested.
+    """
+    from src.rag.retriever import ParentAwareRetriever
 
     base_retriever = get_retriever()
     active_retriever = base_retriever
@@ -318,11 +323,20 @@ def search_kb(
                 prompts_dir=PROJECT_ROOT / "prompts",
             )
 
+    if use_parent_context:
+        active_retriever = ParentAwareRetriever(
+            active_retriever,
+            max_chars=getattr(
+                base_retriever,
+                "parent_context_max_chars",
+                6000,
+            ),
+        )
+
     try:
         chunks = active_retriever.search(
             query,
             top_k=top_k,
-            use_parent_context=use_parent_context,
         )
     except Exception as exc:  # noqa: BLE001
         raise KBError(f"ChromaDB query failed: {exc}") from exc
@@ -337,7 +351,24 @@ def search_kb(
     return chunks
 
 
-search_vector_store = search_kb
+def search_vector_store(
+    query: str,
+    top_k: int,
+    *,
+    use_parent_context: bool = False,
+    ui_mode: str = MODE_STATELESS,
+    llm_config: Optional[Dict[str, Any]] = None,
+    enable_query_expansion: bool = False,
+) -> List[Dict[str, Any]]:
+    """Backward-compatible alias for older UI/tests."""
+    return search_kb(
+        query,
+        top_k,
+        use_parent_context=use_parent_context,
+        ui_mode=ui_mode,
+        llm_config=llm_config,
+        enable_query_expansion=enable_query_expansion,
+    )
 
 
 # ------------------------------------------------------------- BL-09 citations --

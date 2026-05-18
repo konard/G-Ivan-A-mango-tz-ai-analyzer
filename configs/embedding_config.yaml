@@ -1,5 +1,5 @@
 # Embedding & retrieval configuration for the Clarify Engine RAG pipeline.
-# Synchronised with docs/standards/embedding-model.md v1.3 (BL-02, issue #109).
+# Synchronised with docs/standards/embedding-model.md v1.5 (BL-10, issue #137).
 #
 # BL-06 (Sprint 2) migrated chunk_size / chunk_overlap from the MVP values
 # 250 / 50 to the L1 targets 512 / 64, and enabled section-aware splitting.
@@ -65,6 +65,9 @@ required_metadata:
   - section_number
   - product
   - section_inherited
+  - parent_id
+  - section_id
+  - parent_text
 
 # MVP threshold for the fraction of chunks with complete searchable metadata
 # (`source`, `chunk_idx`, `page_number`, `section_title`, `section_number`,
