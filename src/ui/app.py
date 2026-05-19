@@ -12,10 +12,10 @@ user query with the model declared in ``configs/embedding_config.yaml``
 context. Provider metadata is read from ``configs/llm_config.yaml``; secrets
 come from ``.env``.
 
-The module purposefully avoids LangChain/LlamaIndex and any framework that
-hides retrieval/LLM behaviour — only ``streamlit``, ``chromadb``, ``requests``,
-``yaml``, ``dotenv`` and ``sentence-transformers`` (needed to load the
-configured embedding model) are used.
+BL-41 (issue #168): user-facing copy lives in :mod:`src.ui.constants` and the
+rendering helpers live under :mod:`src.ui.components`. This module keeps the
+orchestration layer and every symbol the regression tests monkeypatch via
+``src.ui.app.X``.
 """
 
 from __future__ import annotations
@@ -34,12 +34,49 @@ from uuid import uuid4
 import streamlit as st
 import yaml
 
+from src.ui.components.chat_interface import (
+    latest_assistant_message_index as _latest_assistant_message_index_impl,
+    render_chat_history,
+)
+from src.ui.components.mode_selector import (
+    DEFAULT_TOP_K,
+    render_sidebar as _render_sidebar_component,
+)
+from src.ui.components.results_viewer import (
+    coerce_page as _coerce_page_impl,
+    format_dependency_context as _format_dependency_context_impl,
+    format_dependency_summary as _format_dependency_summary_impl,
+    render_chunks as _render_chunks_impl,
+    section_signature as _section_signature_impl,
+    truncate as _truncate_impl,
+)
+from src.ui.constants import (
+    EXPORT_FORMAT_LABELS,
+    EXPORT_MIME_TYPES,
+    LABELS,
+    MODE_CONSULTATION,
+    MODE_LABELS,
+    MODE_ORDER,
+    MODE_STATELESS,
+    RETRY_BUTTON_LABEL,
+    SESSION_EXPORT_FORMAT_KEY,
+    SESSION_LAST_ANALYSIS_RESULT_KEY,
+    SESSION_LAST_ERROR_KEY,
+    SESSION_LAST_QUERY_KEY,
+    SESSION_PENDING_MODE_KEY,
+    SESSION_PENDING_QUERY_KEY,
+    SESSION_PENDING_RUN_ID_KEY,
+    SESSION_PROCESSING_KEY,
+    UI_GENERATION_ERROR_REASON,
+    UI_GENERATION_ERROR_TEXT,
+)
+
 logger = logging.getLogger(__name__)
 
 # Streamlit's set_page_config must be the first Streamlit call, so it happens
 # at import time before any other UI helpers are imported.
 st.set_page_config(
-    page_title="Clarify Engine - KB Test UI",
+    page_title=LABELS["page_title"],
     page_icon="🔎",
     layout="wide",
 )
@@ -69,19 +106,8 @@ ENV_PATH = PROJECT_ROOT / ".env"
 SOURCES_DIR = PROJECT_ROOT / "knowledge_base" / "sources"
 DEFAULT_CITATIONS_BASE_URL = "http://localhost:8000/docs"
 
-DEFAULT_TOP_K = 5
 CHUNK_PREVIEW_CHARS = 600
 
-# BL-07 (issue #93) — operation modes. The radio labels are user-facing and
-# match the spec verbatim; `STATELESS` and `CONSULTATION` are the internal
-# identifiers used everywhere else so we never compare emoji strings.
-MODE_STATELESS = "stateless"
-MODE_CONSULTATION = "consultation"
-MODE_LABELS: Dict[str, str] = {
-    MODE_STATELESS: "📊 Анализ ТЗ",
-    MODE_CONSULTATION: "💬 Консультация по документации",
-}
-MODE_ORDER: List[str] = [MODE_STATELESS, MODE_CONSULTATION]
 DEFAULT_MAX_HISTORY_MESSAGES = 6
 DEFAULT_MULTI_HOP_MAX_HOPS = 2
 DEFAULT_MULTI_HOP_MIN_CONFIDENCE_TO_STOP = 0.8
@@ -95,30 +121,6 @@ PROVIDER_DISPLAY = {
     "gigachat": "GigaChat",
     "openrouter": "OpenRouter",
     "ollama": "Ollama",
-}
-
-# BL-13 (issue #106) — graceful degradation state. The issue explicitly pins
-# ``last_query`` as the retry source, so that key remains un-namespaced.
-UI_GENERATION_ERROR_TEXT = "Не удалось получить ответ."
-UI_GENERATION_ERROR_REASON = "Все провайдеры недоступны"
-RETRY_BUTTON_LABEL = "Повторить"
-SESSION_LAST_QUERY_KEY = "last_query"
-SESSION_LAST_ERROR_KEY = "last_error"
-SESSION_PROCESSING_KEY = "is_processing"
-SESSION_PENDING_QUERY_KEY = "pending_query"
-SESSION_PENDING_MODE_KEY = "pending_mode"
-SESSION_PENDING_RUN_ID_KEY = "pending_run_id"
-SESSION_LAST_ANALYSIS_RESULT_KEY = "last_analysis_result"
-SESSION_EXPORT_FORMAT_KEY = "analysis_export_format"
-EXPORT_FORMAT_LABELS: Dict[str, str] = {
-    "xlsx": ".xlsx",
-    "docx": ".docx",
-    "md": ".md",
-}
-EXPORT_MIME_TYPES: Dict[str, str] = {
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "md": "text/markdown; charset=utf-8",
 }
 
 # BL-08 (issue #94): the RAG system prompt is now a versioned artefact in
@@ -226,11 +228,7 @@ def get_debug_error_details(ui_config: Optional[Dict[str, Any]] = None) -> bool:
 
 def truncate(text: str, limit: int = CHUNK_PREVIEW_CHARS) -> str:
     """Trim ``text`` to ``limit`` characters and append ``...`` when truncated."""
-    if not text:
-        return ""
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "..."
+    return _truncate_impl(text, limit)
 
 
 def embedding_config_hash(path: Path = EMBEDDING_CONFIG_PATH) -> str:
@@ -243,7 +241,7 @@ def embedding_config_hash(path: Path = EMBEDDING_CONFIG_PATH) -> str:
 
 
 # ----------------------------------------------------- cached resource loaders --
-@st.cache_resource(show_spinner="Loading retriever (BM25 + bge-m3 + ChromaDB)…")
+@st.cache_resource(show_spinner=LABELS["spinner_retriever_init"])
 def get_retriever(config_hash: Optional[str] = None):
     """Build and cache the production hybrid retriever (BL-01).
 
@@ -264,7 +262,7 @@ def get_retriever(config_hash: Optional[str] = None):
         raise KBError(f"Failed to initialise retriever: {exc}") from exc
 
 
-@st.cache_resource(show_spinner="Initialising LLM client…")
+@st.cache_resource(show_spinner=LABELS["spinner_llm_init"])
 def get_llm_client():
     """Build and cache an :class:`LLMClient` from the LLM config."""
     from src.llm.client import LLMClient
@@ -437,13 +435,7 @@ def build_citation_link(
 
 
 def _coerce_page(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    try:
-        page = int(value)
-    except (TypeError, ValueError):
-        return None
-    return page if page > 0 else None
+    return _coerce_page_impl(value)
 
 
 def _first_page_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -461,65 +453,15 @@ def _first_page_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def _section_signature(metadata: Dict[str, Any]) -> str:
-    title = str(metadata.get("section_title") or "").strip()
-    number = str(metadata.get("section_number") or "").strip()
-    fallback = str(metadata.get("section_fallback") or "").strip()
-    if fallback and fallback != "none" and title:
-        return f"раздел: {title}"
-    if number and title:
-        return f"§{number} {title}"
-    if number:
-        return f"§{number}"
-    return title
-
-
-def _metadata_list(value: Any) -> List[str]:
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple, set)):
-        raw_items = [str(item) for item in value]
-    else:
-        raw_items = str(value).split(";")
-    seen = set()
-    items: List[str] = []
-    for raw in raw_items:
-        item = re.sub(r"\s+", " ", raw or "").strip(" \t\r\n,;")
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        items.append(item)
-    return items
+    return _section_signature_impl(metadata)
 
 
 def _format_dependency_context(metadata: Dict[str, Any]) -> str:
-    related = _metadata_list(metadata.get("related_sections"))
-    prerequisites = _metadata_list(metadata.get("prerequisites"))
-    see_also = _metadata_list(metadata.get("see_also"))
-    lines: List[str] = []
-    if prerequisites:
-        lines.append("Предварительные условия: " + "; ".join(prerequisites))
-    if related:
-        lines.append("Связанные разделы: " + "; ".join(related))
-    if see_also:
-        lines.append("См. также: " + "; ".join(see_also))
-    return "\n".join(lines)
+    return _format_dependency_context_impl(metadata)
 
 
 def _format_dependency_summary(metadata: Dict[str, Any]) -> str:
-    related = _metadata_list(metadata.get("related_sections"))
-    prerequisites = _metadata_list(metadata.get("prerequisites"))
-    see_also = _metadata_list(metadata.get("see_also"))
-    if not (related or prerequisites or see_also):
-        return ""
-
-    parts: List[str] = []
-    if prerequisites:
-        parts.append("**Предварительные условия:** " + ", ".join(prerequisites))
-    if related:
-        parts.append("**Связанные разделы:** " + ", ".join(related))
-    if see_also:
-        parts.append("**См. также:** " + ", ".join(see_also))
-    return "\n\n".join(parts)
+    return _format_dependency_summary_impl(metadata)
 
 
 def _first_citation_meta_per_source(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -709,59 +651,12 @@ def estimate_token_count(text: str) -> int:
 
 # ---------------------------------------------------------------- rendering --
 def render_chunks(chunks: List[Dict[str, Any]], debug: bool) -> None:
-    st.subheader("Source Chunks")
-    if not chunks:
-        st.info("No matching chunks were returned.")
-        return
-    for i, chunk in enumerate(chunks, start=1):
-        source = chunk.get("source", "unknown")
-        similarity = chunk.get("similarity")
-        distance = chunk.get("distance")
-        chunk_idx = chunk.get("chunk_idx")
-        meta = chunk.get("metadata") or {}
-        page_number = _coerce_page(meta.get("page_number")) or _coerce_page(chunk.get("page"))
-        section_signature = _section_signature(meta)
-        score_label = (
-            f"similarity={similarity:.4f}" if isinstance(similarity, float)
-            else "similarity=n/a"
-        )
-        chunk_suffix = f" · chunk={chunk_idx}" if chunk_idx is not None else ""
-        page_suffix = f" · стр. {page_number}" if page_number else ""
-        section_suffix = f" · {section_signature}" if section_signature else ""
-        with st.expander(
-            f"#{i} — {source}{page_suffix}{section_suffix}{chunk_suffix}  ({score_label})",
-            expanded=(i == 1),
-        ):
-            if source and source != "unknown":
-                st.markdown(
-                    build_citation_link(
-                        source,
-                        page_number,
-                        section_signature=section_signature,
-                    )
-                )
-            dependency_summary = _format_dependency_summary(meta)
-            if dependency_summary:
-                st.markdown(dependency_summary)
-            st.markdown("**Snippet**")
-            st.write(truncate(chunk.get("text", "")))
-            st.caption(
-                f"distance: {distance:.4f}" if isinstance(distance, float)
-                else "distance: n/a"
-            )
-            if debug:
-                st.markdown("**Metadata**")
-                st.json(
-                    {
-                        "source": source,
-                        "chunk_idx": chunk_idx,
-                        "distance": distance,
-                        "similarity": similarity,
-                        "metadata": chunk.get("metadata", {}),
-                    }
-                )
-                st.markdown("**Full chunk text**")
-                st.code(chunk.get("text", "") or "(empty)", language="markdown")
+    """Render KB chunks via the shared component (BL-41).
+
+    The citations base URL config is owned by this module (BL-09), so we pass
+    :func:`build_citation_link` into the component to keep it decoupled.
+    """
+    _render_chunks_impl(chunks, debug, build_citation_link=build_citation_link)
 
 
 def render_sidebar(
@@ -769,72 +664,11 @@ def render_sidebar(
     *,
     max_history_messages: int,
 ) -> Dict[str, Any]:
-    with st.sidebar:
-        st.header("Settings")
-
-        # BL-07 — mode toggle. Returning the internal identifier (not the
-        # emoji label) keeps the rest of the UI free of UX strings.
-        mode_label = st.radio(
-            "Режим работы",
-            options=[MODE_LABELS[m] for m in MODE_ORDER],
-            index=0,
-            help=(
-                "📊 **Анализ ТЗ** — stateless проверка требований без истории "
-                "(минимум токенов).\n\n"
-                "💬 **Консультация** — диалог с базой знаний, "
-                f"≤ {max_history_messages} последних сообщений сохраняется."
-            ),
-        )
-        mode = next(
-            (m for m, label in MODE_LABELS.items() if label == mode_label),
-            MODE_STATELESS,
-        )
-
-        debug_mode = st.toggle(
-            "Debug Mode",
-            value=False,
-            help="Show raw chunk metadata and the prompt sent to the LLM.",
-        )
-
-        top_k = st.slider(
-            "Top K chunks",
-            min_value=1,
-            max_value=10,
-            value=DEFAULT_TOP_K,
-            help="Number of source chunks retrieved from ChromaDB.",
-        )
-
-        clear_history = False
-        if mode == MODE_CONSULTATION:
-            st.divider()
-            history_len = len(st.session_state.get("messages", []))
-            st.caption(
-                f"История: {history_len} / {max_history_messages} сообщений"
-            )
-            clear_history = st.button(
-                "🧹 Очистить историю",
-                help="Удаляет все сохранённые сообщения текущей консультации.",
-            )
-
-        st.divider()
-        st.caption("LLM fallback chain: **GigaChat → OpenRouter → Ollama**")
-        if retriever_info:
-            st.caption(f"Vector store: `{retriever_info['persist_directory']}`")
-            st.caption(f"Collection: `{retriever_info['collection_name']}`")
-            st.caption(f"Embedding model: `{retriever_info['model_name']}`")
-
-        if not ENV_PATH.exists():
-            st.warning(
-                "`.env` not found at repo root — copy `.env.example` to `.env` "
-                "and fill in your API keys to enable LLM calls."
-            )
-
-    return {
-        "mode": mode,
-        "debug": debug_mode,
-        "top_k": top_k,
-        "clear_history": clear_history,
-    }
+    return _render_sidebar_component(
+        retriever_info,
+        max_history_messages=max_history_messages,
+        env_path=ENV_PATH,
+    )
 
 
 def _reset_history() -> None:
@@ -912,23 +746,31 @@ def _render_retry_notice(mode: str) -> bool:
         return False
 
     st.error(str(error.get("message") or UI_GENERATION_ERROR_TEXT))
-    st.caption(f"Причина: {error.get('reason') or UI_GENERATION_ERROR_REASON}")
+    st.caption(
+        LABELS["error_retry_caption"].format(
+            reason=error.get("reason") or UI_GENERATION_ERROR_REASON
+        )
+    )
     st.download_button(
-        "📥 Скачать логи",
+        LABELS["error_download_button"],
         data=error.get("report_bytes") or b"",
         file_name=_error_report_filename(),
         mime="text/plain; charset=utf-8",
         key=f"download_error_{mode}",
     )
     if get_debug_error_details():
-        with st.expander("ℹ️ Как исправить", expanded=False):
+        with st.expander(LABELS["error_remediation_expander"], expanded=False):
             report = error.get("report") if isinstance(error.get("report"), dict) else {}
             recommendations = report.get("recommendations") or [
-                "Проверьте конфигурацию провайдеров и серверные логи по run_id."
+                LABELS["error_remediation_default"]
             ]
             for item in recommendations:
                 st.markdown(f"- {item}")
-            st.caption(f"run_id: {error.get('run_id', '')}")
+            st.caption(
+                LABELS["error_run_id_caption"].format(
+                    run_id=error.get("run_id", "")
+                )
+            )
     clicked = st.button(
         RETRY_BUTTON_LABEL,
         key=f"retry_{mode}",
@@ -939,7 +781,7 @@ def _render_retry_notice(mode: str) -> bool:
 
     query = str(st.session_state.get(SESSION_LAST_QUERY_KEY) or "").strip()
     if not query:
-        st.warning("Нет сохранённого запроса для повторной попытки.")
+        st.warning(LABELS["error_no_saved_query"])
         return False
     _queue_generation(query, mode)
     return True
@@ -1093,10 +935,8 @@ def _store_generation_error(
 def main() -> None:
     load_dotenv(ENV_PATH, override=False)
 
-    st.title("Clarify Engine - KB Test UI")
-    st.caption(
-        "Query the indexed knowledge base and let an LLM answer with citations."
-    )
+    st.title(LABELS["page_title"])
+    st.caption(LABELS["page_subtitle"])
 
     llm_config = load_llm_config()
     max_history_messages = get_max_history_messages(llm_config)
@@ -1111,7 +951,7 @@ def main() -> None:
         }
     except KBError as exc:
         run_id = _new_run_id()
-        st.error("Не удалось подготовить поиск по базе знаний.")
+        st.error(LABELS["error_initialisation"])
         _safe_log_ui_error(
             run_id=run_id,
             mode="initialization",
@@ -1125,7 +965,7 @@ def main() -> None:
     _ensure_mode_state(settings["mode"])
     if settings.get("clear_history"):
         _reset_history()
-        st.success("История консультации очищена.")
+        _show_toast(LABELS["toast_history_cleared"], icon="🧹")
 
     if settings["mode"] == MODE_CONSULTATION:
         _run_consultation_mode(
@@ -1136,23 +976,42 @@ def main() -> None:
         _run_analysis_mode(settings=settings)
 
 
+def _show_toast(message: str, *, icon: Optional[str] = None) -> None:
+    """Emit a Streamlit toast, falling back to ``st.success`` if unavailable.
+
+    Toasts are part of the BL-41 UX polish but some Streamlit stubs in the
+    test suite don't ship the API, so we degrade gracefully.
+    """
+    toast = getattr(st, "toast", None)
+    if callable(toast):
+        try:
+            toast(message, icon=icon) if icon else toast(message)
+            return
+        except TypeError:
+            toast(message)
+            return
+    st.success(message)
+
+
 def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
-    """Stateless TZ-analysis path — no history, identical to pre-BL-07 UX."""
+    """Stateless TZ-analysis path — no history."""
     processing = _is_mode_processing(MODE_STATELESS)
     _render_analysis_export_button()
     query = st.text_area(
-        "Your query",
+        LABELS["analysis_query_label"],
         height=140,
-        placeholder="Ask a question about the indexed knowledge base…",
+        placeholder=LABELS["analysis_query_placeholder"],
         key="kb_query",
         disabled=processing,
     )
-    submitted = st.button("Search KB", type="primary", disabled=processing)
+    submitted = st.button(
+        LABELS["analysis_submit_button"], type="primary", disabled=processing
+    )
     _render_retry_notice(MODE_STATELESS)
 
     if submitted:
         if not query.strip():
-            st.warning("Please enter a query before searching.")
+            st.warning(LABELS["analysis_empty_query_warning"])
             return
         _queue_generation(query, MODE_STATELESS)
         return
@@ -1165,10 +1024,7 @@ def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
         return
 
     if not _last_error_matches(MODE_STATELESS):
-        st.info(
-            "Enter a query and click **Search KB** to retrieve chunks and an "
-            "LLM-generated answer."
-        )
+        st.info(LABELS["analysis_intro_info"])
 
 
 def _process_pending_analysis(settings: Dict[str, Any]) -> None:
@@ -1176,7 +1032,7 @@ def _process_pending_analysis(settings: Dict[str, Any]) -> None:
     run_id = str(st.session_state.get(SESSION_PENDING_RUN_ID_KEY) or _new_run_id())
     if not query:
         _finish_pending_generation()
-        st.warning("Please enter a query before searching.")
+        st.warning(LABELS["analysis_empty_query_warning"])
         st.rerun()
         return
 
@@ -1199,6 +1055,7 @@ def _process_pending_analysis(settings: Dict[str, Any]) -> None:
             _build_analysis_export_row(query, rendered_answer, chunks)
         ]
         st.session_state.pop(SESSION_LAST_ERROR_KEY, None)
+        _show_toast(LABELS["toast_search_success"], icon="✅")
 
     _finish_pending_generation()
     st.rerun()
@@ -1213,12 +1070,12 @@ def _render_analysis_result(debug: bool) -> bool:
     prompt = str(result.get("prompt") or "")
     rendered_answer = str(result.get("answer") or "")
 
-    st.subheader("LLM Response")
-    st.markdown(rendered_answer or "_(empty response)_")
+    st.subheader(LABELS["analysis_response_header"])
+    st.markdown(rendered_answer or LABELS["analysis_response_empty"])
     _render_analysis_export_button()
 
     if debug and prompt:
-        with st.expander("Prompt sent to LLM", expanded=False):
+        with st.expander(LABELS["analysis_prompt_expander"], expanded=False):
             st.code(prompt, language="markdown")
 
     render_chunks(chunks, debug)
@@ -1233,34 +1090,21 @@ def _run_consultation_mode(
     """Stateful chat path — keeps ≤ ``max_history_messages`` recent turns."""
     processing = _is_mode_processing(MODE_CONSULTATION)
     st.caption(
-        "Режим консультации: ассистент помнит последние "
-        f"{max_history_messages} сообщений. Используйте "
-        "**🧹 Очистить историю** в сайдбаре, чтобы начать диалог заново."
+        LABELS["consultation_caption_template"].format(max=max_history_messages)
     )
     _render_chat_export_button()
 
     messages = list(st.session_state.get("messages", []))
-    latest_assistant_idx = _latest_assistant_message_index(messages)
-    for idx, msg in enumerate(messages):
-        with st.chat_message(msg.get("role", "user")):
-            st.markdown(msg.get("content", ""))
-            if (
-                settings["debug"]
-                and idx == latest_assistant_idx
-                and str(msg.get("role", "")).lower() == "assistant"
-            ):
-                prompt = str(msg.get("prompt") or "")
-                chunks = msg.get("chunks") or []
-                if prompt:
-                    with st.expander("Prompt sent to LLM", expanded=False):
-                        st.code(prompt, language="markdown")
-                if chunks:
-                    render_chunks(chunks, settings["debug"])
+    render_chat_history(
+        messages,
+        debug=settings["debug"],
+        render_chunks=render_chunks,
+    )
 
     _render_retry_notice(MODE_CONSULTATION)
 
     query = st.chat_input(
-        "Задайте вопрос по документации…",
+        LABELS["consultation_input_placeholder"],
         disabled=processing,
     )
     if query and not processing:
@@ -1285,14 +1129,11 @@ def _run_consultation_mode(
         and not st.session_state.get("messages")
         and not _last_error_matches(MODE_CONSULTATION)
     ):
-        st.info("Введите вопрос ниже, чтобы начать консультацию по базе знаний.")
+        st.info(LABELS["consultation_intro_info"])
 
 
 def _latest_assistant_message_index(messages: Sequence[Dict[str, Any]]) -> Optional[int]:
-    for idx in range(len(messages) - 1, -1, -1):
-        if str(messages[idx].get("role", "")).lower() == "assistant":
-            return idx
-    return None
+    return _latest_assistant_message_index_impl(messages)
 
 
 def _process_pending_consultation(
@@ -1304,7 +1145,7 @@ def _process_pending_consultation(
     run_id = str(st.session_state.get(SESSION_PENDING_RUN_ID_KEY) or _new_run_id())
     if not query:
         _finish_pending_generation()
-        st.warning("Нет сохранённого запроса для повторной попытки.")
+        st.warning(LABELS["error_no_saved_query"])
         st.rerun()
         return
 
@@ -1372,14 +1213,15 @@ def _render_analysis_export_button() -> None:
     disabled = not bool(rows)
     selected_format = _ensure_export_format_state()
     st.radio(
-        "Формат отчета",
+        LABELS["export_format_label"],
         options=list(EXPORT_FORMAT_LABELS),
         format_func=lambda value: EXPORT_FORMAT_LABELS.get(value, value),
         key=SESSION_EXPORT_FORMAT_KEY,
         horizontal=True,
         disabled=disabled,
+        help=LABELS["export_format_help"],
     )
-    st.caption("Режим сохранения: create_new")
+    st.caption(LABELS["export_mode_caption"])
 
     selected_format = str(st.session_state.get(SESSION_EXPORT_FORMAT_KEY) or "xlsx").lower()
     if selected_format not in EXPORT_FORMAT_LABELS:
@@ -1401,7 +1243,7 @@ def _render_analysis_export_button() -> None:
                 data = BytesIO(Path(output_path).read_bytes())
                 file_name = Path(output_path).name
         except Exception as exc:  # noqa: BLE001 - Streamlit must show a friendly error.
-            st.error(f"Ошибка генерации файла: {exc}")
+            st.error(LABELS["export_router_error_template"].format(error=exc))
             data = BytesIO()
             file_name = f"clarify-analysis-report.{selected_format}"
             disabled = True
@@ -1410,7 +1252,9 @@ def _render_analysis_export_button() -> None:
         file_name = f"clarify-analysis-report.{selected_format}"
 
     st.download_button(
-        f"📥 Скачать отчет (.{selected_format})",
+        LABELS["export_download_button_template"].format(
+            label=EXPORT_FORMAT_LABELS[selected_format]
+        ),
         data=data,
         file_name=file_name,
         mime=EXPORT_MIME_TYPES[selected_format],
@@ -1428,7 +1272,7 @@ def _render_chat_export_button() -> None:
     else:
         data = BytesIO()
     st.download_button(
-        "📥 Сохранить диалог (.md)",
+        LABELS["export_chat_download_button"],
         data=data,
         file_name="clarify-consultation-dialog.md",
         mime="text/markdown; charset=utf-8",
@@ -1454,7 +1298,7 @@ def _retrieve_and_answer(
     llm_config = load_llm_config()
 
     try:
-        with st.spinner("Searching knowledge base…"):
+        with st.spinner(LABELS["spinner_search"]):
             chunks = search_kb(
                 query,
                 top_k,
@@ -1492,7 +1336,7 @@ def _retrieve_and_answer(
     )
 
     try:
-        with st.spinner("Calling LLM (GigaChat → OpenRouter → Ollama)…"):
+        with st.spinner(LABELS["spinner_llm"]):
             client = get_llm_client()
             answer = client.generate_rag_response(get_rag_system_prompt(), prompt)
     except _generation_error_types() as exc:

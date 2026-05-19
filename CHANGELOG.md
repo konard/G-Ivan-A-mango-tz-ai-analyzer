@@ -9,6 +9,21 @@
 ### ⚠️ BREAKING CHANGES
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
+### Changed
+- **BL-41 — Streamlit UI refactor & UX polish (issue #168).** `src/ui/app.py`
+  decomposed into single-responsibility components under
+  `src/ui/components/` (`mode_selector.py`, `upload_zone.py`,
+  `chat_interface.py`, `results_viewer.py`). All Russian user-facing copy
+  centralised in `src/ui/constants.LABELS` so translations or proof-reads
+  touch one dict. UX touch-ups: `st.toast` notifications on history-clear
+  and successful search, tooltip legend over the status column
+  (Да / Нет / Частично / НД / Ошибка) via `STATUS_TOOLTIPS`, ℹ️ info icons
+  on export-format radio and debug error remediation. No changes to
+  prompts, configs, `LLMClient`, `pipeline.py`, or the `src.ui.app` public
+  surface (`MODE_LABELS`, `SESSION_*`, `UI_GENERATION_ERROR_TEXT`, etc.
+  remain importable as before). New `tests/test_ui_components.py` pins the
+  `LABELS` contract and component callables; full suite at 347 tests.
+
 ### Documentation
 - **DOCUMENTATION: BL-40 ADR sync & numbering convention (issue #166).** Pure
   documentation synchronization across `docs/ADR/001..009` with `CONCEPT.md` v2.5
