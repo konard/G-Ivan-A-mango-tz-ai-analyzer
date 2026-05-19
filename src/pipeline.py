@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from src.exporters.excel_exporter import save_results
+from src.exporters import ExportRouter
 from src.llm.client import LLMClient, LLMError
 from src.llm.masking import sanitize_log_record
 from src.parsers import load_requirements_by_extension
@@ -317,9 +317,9 @@ def run_analysis(
                 }
             )
 
-    save_results(
+    ExportRouter().export(
         results,
-        output_file,
+        output_file=output_file,
         source_file=input_file,
         run_id=run_id,
     )
@@ -348,7 +348,11 @@ def _configure_logging(verbosity: int) -> None:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the TZ analyzer RAG pipeline.")
     parser.add_argument("--input", required=True, help="Path to the input file (.xlsx/.docx)")
-    parser.add_argument("--output", required=True, help="Path to the output Excel file (.xlsx)")
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="Path to the output report file (.xlsx, .docx, or .md)",
+    )
     parser.add_argument("--kb-dir", default="knowledge_base", help="Knowledge base directory")
     parser.add_argument(
         "--embedding-config",

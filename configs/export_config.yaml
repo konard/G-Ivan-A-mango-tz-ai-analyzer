@@ -1,4 +1,7 @@
 export:
+  default_format: xlsx
+  append_mode: false
+  report_basename_template: "{basename}_report_{run_id_8}.{ext}"
   excel_columns:
     - "requirement_id"
     - "requirement_text"

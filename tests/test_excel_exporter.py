@@ -105,3 +105,59 @@ def test_save_results_with_source_preserves_input_columns(tmp_path: Path) -> Non
     assert list(df.columns)[:3] == ["ID", "Требование", "Раздел"]
     assert list(df.columns)[-4:] == RESULT_COLUMNS
     assert (df["[RunID]"] == "run-abc").all()
+
+
+def test_save_results_with_multisheet_source_uses_locator_sheet_and_row(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "tz-multisheet.xlsx"
+    with pd.ExcelWriter(source_file) as writer:
+        pd.DataFrame({"Требование": ["Поддержка SIP"]}).to_excel(
+            writer, sheet_name="Основное", index=False
+        )
+        pd.DataFrame({"Требование": ["Запись звонков"]}).to_excel(
+            writer, sheet_name="Интеграции", index=False
+        )
+
+    results = [
+        {
+            "id": 1,
+            "text": "Поддержка SIP",
+            "locator": {
+                "type": "cell",
+                "sheet_name": "Основное",
+                "row": 2,
+                "column": "Требование",
+            },
+            "classification": {
+                "classification": "Да",
+                "reasoning": "SIP подтверждён.",
+                "confidence": 0.91,
+            },
+        },
+        {
+            "id": 2,
+            "text": "Запись звонков",
+            "locator": {
+                "type": "cell",
+                "sheet_name": "Интеграции",
+                "row": 2,
+                "column": "Требование",
+            },
+            "classification": {
+                "classification": "Частично",
+                "reasoning": "Нужна проверка условий хранения.",
+                "confidence": 0.73,
+            },
+        },
+    ]
+
+    output_file = tmp_path / "out.xlsx"
+    save_results(results, output_file, source_file=source_file, run_id="run-multi")
+
+    sheets = pd.read_excel(output_file, sheet_name=None)
+    assert set(sheets) == {"Основное", "Интеграции"}
+    assert sheets["Основное"]["[Статус]"].tolist() == ["Да"]
+    assert sheets["Интеграции"]["[Статус]"].tolist() == ["Частично"]
+    assert (sheets["Основное"]["[RunID]"] == "run-multi").all()
+    assert (sheets["Интеграции"]["[RunID]"] == "run-multi").all()

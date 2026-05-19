@@ -41,11 +41,11 @@ Open-source модуль для работы с требованиями и ба
 
 | Возможность | Описание |
 |-------------|----------|
-| 📥 **Парсинг** | Извлечение требований из `.xlsx` (конфигурируемые колонки). |
+| 📥 **Парсинг** | Извлечение требований из `.xlsx` и `.docx` с локаторами источника. |
 | 🔎 **RAG-Поиск** | Гибридный поиск по внутренней базе знаний (ChromaDB). |
 | 🤖 **LLM-Классификация** | Fallback-цепочка (DeepSeek → GigaChat). |
 | 🛡️ **Маскирование** | Regex-замена PII (email, phone, IP, domain) до отправки запроса. |
-| 📤 **Экспорт** | Возврат файла с колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. |
+| 📤 **Экспорт** | Возврат `.xlsx`, `.docx` или `.md` отчёта с MVP-полями `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. |
 | 🖥️ **Streamlit UI** | Веб-интерфейс для загрузки файлов и мониторинга прогресса. |
 | 📊 **Quality Gate** | CLI-скрипт для замера Macro-F1 на эталонных данных. |
 
@@ -139,6 +139,10 @@ providers:
 # Индексация базы знаний (один раз)
 python knowledge_base/indexing/build_index.py
 
+# CLI-анализ ТЗ с выбором формата отчёта по расширению output
+python -m src.pipeline --input test_data/sample_tz.xlsx --output output/sample_tz_report.xlsx
+python -m src.pipeline --input test_data/sample_tz_1.DOCX --output output/sample_tz_1_report.md
+
 # Запуск интерфейса
 streamlit run src/app.py
 ```
@@ -153,6 +157,7 @@ streamlit run src/app.py
 - [`masking_rules.yaml`](configs/masking_rules.yaml) — regex-паттерны для защиты данных.
 - [`classification_rules.json`](configs/classification_rules.json) — детерминированные правила классификации.
 - [`parsing_config.yaml`](configs/parsing_config.yaml) — настройки парсинга `.xlsx`.
+- [`export_config.yaml`](configs/export_config.yaml) — формат по умолчанию, запрет append-mode и шаблон имени файла-отчёта.
 
 ⚠️ **Политика данных:**
 - Проект разрабатывается независимо.

@@ -111,6 +111,30 @@ def test_run_analysis_accepts_docx_input(tmp_path: Path) -> None:
     ]
 
 
+def test_run_analysis_exports_markdown_when_output_suffix_is_md(tmp_path: Path) -> None:
+    input_file = tmp_path / "tz.xlsx"
+    pd.DataFrame({"Требование": ["Поддержка интеграции с Битрикс24"]}).to_excel(
+        input_file, index=False
+    )
+
+    output_file = tmp_path / "result.md"
+    run_id = "abcdef0123456789abcdef0123456789"
+    stats = run_analysis(
+        input_file=str(input_file),
+        output_file=str(output_file),
+        retriever=_build_retriever(),
+        llm_client=_build_fake_llm(),
+        run_id=run_id,
+    )
+
+    assert stats.total == 1
+    assert output_file.exists()
+    rendered = output_file.read_text(encoding="utf-8")
+    assert f"run_id: {run_id}" in rendered
+    assert "| № | Ref | Исходное требование | [Статус] |" in rendered
+    assert "Поддержка интеграции с Битрикс24" in rendered
+
+
 def test_run_analysis_propagates_run_id_to_logs_stats_and_export(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

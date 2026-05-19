@@ -19,27 +19,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Union
+
+from src.exporters.schema import (
+    NormalizedExportRow,
+    RESULT_COLUMNS,
+    rows_from_results,
+)
 
 logger = logging.getLogger(__name__)
-
-RESULT_COLUMNS: List[str] = [
-    "[Статус]",
-    "[Комментарий]",
-    "[Confidence]",
-    "[RunID]",
-]
-
-
-def _classification_row(item: Dict[str, Any], run_id: str) -> Dict[str, Any]:
-    classification = item.get("classification") or {}
-    confidence = float(classification.get("confidence", 0.0) or 0.0)
-    return {
-        "[Статус]": classification.get("classification", "НД"),
-        "[Комментарий]": classification.get("reasoning", ""),
-        "[Confidence]": confidence,
-        "[RunID]": run_id,
-    }
 
 
 def _empty_row(run_id: str) -> Dict[str, Any]:
@@ -75,6 +63,24 @@ def save_results(
     Returns:
         The absolute path of the saved workbook.
     """
+    rows = rows_from_results(results, run_id=run_id or "")
+    return save_export_rows(
+        rows,
+        output_file,
+        sheet_name=sheet_name,
+        source_file=source_file,
+        run_id=run_id,
+    )
+
+
+def save_export_rows(
+    rows: Sequence[NormalizedExportRow],
+    output_file: Union[str, Path],
+    sheet_name: str = "Results",
+    source_file: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+) -> Path:
+    """Persist normalized export rows to an Excel workbook."""
     try:
         import pandas as pd  # type: ignore
     except ImportError as exc:  # pragma: no cover
@@ -82,34 +88,35 @@ def save_results(
             "pandas is required to export results. Install it with `pip install pandas openpyxl`."
         ) from exc
 
-    run_id = run_id or ""
-    results_list: List[Dict[str, Any]] = list(results)
-    classification_rows = [_classification_row(item, run_id) for item in results_list]
-
-    source_df = _load_source_dataframe(source_file)
-    if source_df is not None and not source_df.empty:
-        n = len(source_df)
-        appended_rows: List[Dict[str, Any]] = [_empty_row(run_id) for _ in range(n)]
-        for item, row in zip(results_list, classification_rows):
-            idx = int(item.get("id", 0)) - 1
-            if 0 <= idx < n:
-                appended_rows[idx] = row
-        appended_df = pd.DataFrame(appended_rows, columns=RESULT_COLUMNS)
-        merged = pd.concat([source_df.reset_index(drop=True), appended_df], axis=1)
-    else:
-        minimal_rows: List[Dict[str, Any]] = []
-        for item, row in zip(results_list, classification_rows):
-            minimal_rows.append(
-                {
-                    "ID": item.get("id"),
-                    "Требование": item.get("text"),
-                    **row,
-                }
-            )
-        merged = pd.DataFrame(minimal_rows)
-
+    run_id = run_id or _run_id_from_rows(rows)
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    source_workbook = _load_source_workbook(source_file)
+    if source_workbook:
+        with pd.ExcelWriter(output_path) as writer:
+            for current_sheet_name, source_df in source_workbook.items():
+                merged = _merge_source_sheet(
+                    source_df,
+                    current_sheet_name=current_sheet_name,
+                    rows=rows,
+                    run_id=run_id,
+                    single_sheet=len(source_workbook) == 1,
+                )
+                merged.to_excel(writer, sheet_name=current_sheet_name, index=False)
+        logger.info("Saved %d sheets to %s", len(source_workbook), output_path)
+        return output_path
+
+    minimal_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        minimal_rows.append(
+            {
+                "ID": row.id,
+                "Требование": row.source_text,
+                **row.mvp_values(),
+            }
+        )
+    merged = pd.DataFrame(minimal_rows)
     merged.to_excel(output_path, sheet_name=sheet_name, index=False)
     logger.info("Saved %d rows to %s", len(merged), output_path)
     return output_path
@@ -117,6 +124,16 @@ def save_results(
 
 def _load_source_dataframe(source_file: Optional[Union[str, Path]]):
     """Best-effort read of the input ``.xlsx`` to preserve its structure."""
+    workbook = _load_source_workbook(source_file)
+    if not workbook:
+        return None
+    return next(iter(workbook.values()))
+
+
+def _load_source_workbook(
+    source_file: Optional[Union[str, Path]]
+) -> Optional[Mapping[str, Any]]:
+    """Best-effort read of the input workbook to preserve all sheets."""
     if not source_file:
         return None
     path = Path(source_file)
@@ -129,7 +146,63 @@ def _load_source_dataframe(source_file: Optional[Union[str, Path]]):
     except ImportError:  # pragma: no cover
         return None
     try:
-        return pd.read_excel(path)
+        workbook = pd.read_excel(path, sheet_name=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not preserve structure from %s: %s", path, exc)
         return None
+    if not isinstance(workbook, dict):
+        return None
+    return workbook
+
+
+def _merge_source_sheet(
+    source_df: Any,
+    *,
+    current_sheet_name: str,
+    rows: Sequence[NormalizedExportRow],
+    run_id: str,
+    single_sheet: bool,
+):
+    import pandas as pd  # type: ignore
+
+    n = len(source_df)
+    appended_rows: List[Dict[str, Any]] = [_empty_row(run_id) for _ in range(n)]
+    for row in rows:
+        row_index = _source_row_index_for_sheet(
+            row,
+            current_sheet_name=current_sheet_name,
+            single_sheet=single_sheet,
+        )
+        if row_index is None:
+            continue
+        if 0 <= row_index < n:
+            appended_rows[row_index] = row.mvp_values()
+    appended_df = pd.DataFrame(appended_rows, columns=RESULT_COLUMNS)
+    return pd.concat([source_df.reset_index(drop=True), appended_df], axis=1)
+
+
+def _source_row_index_for_sheet(
+    row: NormalizedExportRow,
+    *,
+    current_sheet_name: str,
+    single_sheet: bool,
+) -> Optional[int]:
+    locator = row.locator or {}
+    locator_sheet = locator.get("sheet_name") or locator.get("sheet")
+    if locator_sheet:
+        if str(locator_sheet) != str(current_sheet_name):
+            return None
+        try:
+            return int(locator.get("row")) - 2
+        except (TypeError, ValueError):
+            return None
+    if single_sheet:
+        return row.id - 1
+    return None
+
+
+def _run_id_from_rows(rows: Sequence[NormalizedExportRow]) -> str:
+    for row in rows:
+        if row.run_id:
+            return row.run_id
+    return ""
