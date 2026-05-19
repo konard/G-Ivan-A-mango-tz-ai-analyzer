@@ -6,6 +6,36 @@
 
 ## [Unreleased]
 
+### Research
+- **RESEARCH: BL-47 ARM installer & cloud access feasibility study (issue #180).**
+  Опубликован отчёт
+  [`docs/research/2026-05-20_bl-47_arm-installer-cloud-research_v1.md`](docs/research/2026-05-20_bl-47_arm-installer-cloud-research_v1.md)
+  с архитектурными рекомендациями по трём направлениям пилота с
+  не-техническими пользователями (БА): (1) упрощённая установка на АРМ
+  Windows 10/11 + Python 3.14 + CPU Ollama через тонкий Python-бутстрапер
+  `clarify-setup.cmd` (PoC-1, ≤ 8 ч) поверх существующего runbook
+  [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md)
+  (BL-45); (2) облачный доступ к ТЗ — выбран WebDAV как первый адаптер
+  (покрывает Я.Диск/Nextcloud/OwnCloud), SharePoint Graph отложен (R-CLOUD-01,
+  OAuth-redirect за корп. NAT); (3) обновление КБ из UI — Streamlit-вкладка
+  «🔄 Обновить базу знаний» поверх существующего идемпотентного
+  `knowledge_base/indexing/build_index.py` с backup→deploy→rollback (PoC-2,
+  ≤ 6 ч). Зафиксирован исчерпывающий контракт `.gitignore`-артефактов по 13
+  группам путей: `chroma_data/`, `logs/`, `knowledge_base/sources/`, `.env`,
+  `configs/*.yaml`, `venv/` и др. — что упаковывается, что создаётся при
+  First-Run, что сохраняется при Update, какая backup-стратегия. Алгоритм
+  обновления `backup → deploy → restore/migrate` детализирован в 7 шагов с
+  атомарным rollback при FAIL. Описан First-Run wizard (8 шагов CLI) с
+  обработкой ключей API через wizard-prompt (test-mode default, без
+  хранения в коде), проверкой Ollama (`qwen2.5:7b` ~4.3 GiB) и созданием
+  ярлыков на рабочем столе и в меню «Пуск». PoC-план — 3 задачи ≤ 16 ч
+  суммарно, укладывается в Sprint 4 без вытеснения других BL-задач.
+  Риски (R-INST-01..05, R-CLOUD-01..03, R-KB-01..03, R-NFR-01, R-DOC-01)
+  с конкретными митигациями. Рекомендованы три отдельных ADR: `ADR-010
+  cloud-tz-access`, `ADR-011 installer-architecture`, `ADR-012
+  kb-update-from-ui`. Отчёт готов как основа для BL-48 (реализация
+  инсталлятора) и BL-49 (cloud integration).
+
 ### ⚠️ BREAKING CHANGES
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
