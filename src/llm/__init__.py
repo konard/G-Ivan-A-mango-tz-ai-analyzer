@@ -6,6 +6,10 @@ from src.llm.client import (
     LLMError,
     mask_text,
 )
+from src.llm.docx_structure_enricher import (
+    DocxStructureEnricher,
+    EnrichmentSettings,
+)
 from src.llm.prompt_loader import (
     PromptInfo,
     PromptNotFoundError,
@@ -16,6 +20,8 @@ from src.llm.prompt_loader import (
 
 __all__ = [
     "ClassificationResult",
+    "DocxStructureEnricher",
+    "EnrichmentSettings",
     "LLMClient",
     "LLMError",
     "PromptInfo",

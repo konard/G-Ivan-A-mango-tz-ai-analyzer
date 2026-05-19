@@ -30,6 +30,12 @@
 |---------|------------|--------|---------------------------------------------------------------------|-------------------------------------------------------------------------|
 | v1      | 2026-05-18 | konard | `b26532713ae9623e7b7ba7207282fdb8b214b164d4807869b6f6b2aeb047cb98` | Initial release. Strict JSON array with 3–4 semantic query rewrites.    |
 
+## docx_structure_enricher (атомаризация DOCX-блоков)
+
+| Version | Date       | Author | SHA-256 (hex)                                                      | Changes                                                                 |
+|---------|------------|--------|---------------------------------------------------------------------|-------------------------------------------------------------------------|
+| v1.0    | 2026-05-19 | konard | `ce171c0582e1c4790d3b6b1a1c09b997921fbe8c07a29522d66fc3bbf5cdf1d7` | Initial BL-31 prompt. Requires strict JSON spans and forbids `exact_text` output. |
+
 ## few_shot_examples (калибровочные кейсы для classifier)
 
 | Version | Date       | Author | SHA-256 (hex)                                                      | Changes                                                                                |

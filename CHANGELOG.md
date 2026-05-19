@@ -31,6 +31,11 @@
   with `parent_id` / `section_id` / `parent_text`.
 
 ### Added
+- **BL-31 (issue #153):** Added isolated offline DOCX structure enrichment.
+  `scripts/tools/enrich_docx_structure.py` parses `.docx` files and writes
+  atomized JSON with deterministic span slicing, SHA-256 `exact_text`
+  validation metadata, `parent_id`, export-compatible `Ref`, confidence-based
+  manual-review flags, local Ollama support, and heuristic fallback.
 - **BL-30 (issue #151):** Added an isolated canonical query cache PoC in
   `scripts/poc/semantic_cache_poc.py`, covering Golden Set replay loading,
   deterministic threshold sweeps (`0.90`, `0.95`, `0.97`), cache hit/latency/
