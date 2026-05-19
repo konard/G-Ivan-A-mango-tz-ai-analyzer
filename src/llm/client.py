@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -282,6 +283,94 @@ def _resolve_ollama_config(config: Dict[str, Any]) -> Dict[str, Any]:
     resolved["timeout_seconds"] = max(timeout, 1)
     resolved["options"] = dict(options) if isinstance(options, dict) else {}
     return resolved
+
+
+# --- BL-51: auto-detect Ollama executable (issue #195) ------------------------
+# Resolution order matches `docs/runbooks/arm-deployment-ivan.md` §1.4a:
+#   1. PATH lookup via `shutil.which("ollama")` — works on Linux/macOS and on
+#      Windows after `setx PATH ...` or the BL-48 wizard ran.
+#   2. `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` — default Windows installer
+#      target for non-admin installs (the path the ARM testers hit).
+#   3. `C:\Program Files\Ollama\ollama.exe` — fallback for admin-wide installs.
+# The Linux/macOS standard install paths are tracked as TODO since BL-51 is
+# scoped to the Windows ARM regression only.
+_OLLAMA_EXECUTABLE_NAME = "ollama"
+_WINDOWS_OLLAMA_FALLBACK_PATHS: tuple[str, ...] = (
+    r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe",
+    r"C:\Program Files\Ollama\ollama.exe",
+)
+# TODO(BL-51): add Linux/macOS fallback paths (e.g. /usr/local/bin/ollama,
+# /opt/homebrew/bin/ollama) when the pilot moves beyond Windows ARM.
+_OLLAMA_NOT_FOUND_MESSAGE = (
+    "Не удалось найти исполняемый файл Ollama. "
+    "Установите Ollama for Windows с https://ollama.com/download и добавьте "
+    r"%LOCALAPPDATA%\Programs\Ollama в PATH командой "
+    r'setx PATH "%PATH%;%LOCALAPPDATA%\Programs\Ollama" '
+    "(перезапустите CMD, чтобы изменение вступило в силу). "
+    "Подробнее: docs/runbooks/arm-deployment-ivan.md §1.4a."
+)
+
+
+def _expand_ollama_path(raw_path: str) -> str:
+    """Expand Windows env vars (``%LOCALAPPDATA%``) and ``~`` in a path string."""
+    return os.path.expanduser(os.path.expandvars(raw_path))
+
+
+def _resolve_ollama_executable(
+    *,
+    which: Callable[[str], Optional[str]] = shutil.which,
+    path_exists: Callable[[str], bool] = os.path.isfile,
+) -> str:
+    """Locate the ``ollama`` executable for runbook guidance (BL-51, issue #195).
+
+    Resolution order:
+    1. ``shutil.which("ollama")`` — honours an already-configured PATH.
+    2. Windows installer defaults — ``%LOCALAPPDATA%\\Programs\\Ollama\\ollama.exe``,
+       then ``C:\\Program Files\\Ollama\\ollama.exe``.
+
+    Raises :class:`RuntimeError` with a deterministic, actionable message
+    pointing at ``setx PATH`` and the ARM runbook when nothing is found, so
+    the failure surface is a single, copy-pasteable instruction instead of a
+    silent ``Connection refused`` later in the LLM call chain.
+
+    ``which`` and ``path_exists`` are injectable for unit tests; production
+    code uses :func:`shutil.which` and :func:`os.path.isfile`.
+    """
+    on_path = which(_OLLAMA_EXECUTABLE_NAME)
+    if on_path:
+        return on_path
+    for candidate in _WINDOWS_OLLAMA_FALLBACK_PATHS:
+        expanded = _expand_ollama_path(candidate)
+        if path_exists(expanded):
+            return expanded
+    raise RuntimeError(_OLLAMA_NOT_FOUND_MESSAGE)
+
+
+_ollama_executable_logged = False
+
+
+def _log_ollama_executable_once() -> None:
+    """Log the resolved Ollama executable path the first time it is requested.
+
+    Wrapped in a guard so subsequent ``_call_ollama_rag`` invocations do not
+    spam the audit log. The lookup is best-effort: if the executable cannot
+    be found we surface a sanitised warning (BL-23) so the LLM HTTP call can
+    still run when only the daemon is reachable over the network.
+    """
+    global _ollama_executable_logged
+    if _ollama_executable_logged:
+        return
+    _ollama_executable_logged = True
+    try:
+        resolved = _resolve_ollama_executable()
+    except RuntimeError as exc:
+        _safe_logger_warning("Ollama executable lookup failed: %s", exc)
+        return
+    sanitized = sanitize_log_record({"ollama_executable": resolved})
+    _safe_logger_info(
+        "Ollama executable resolved: %s",
+        sanitized.get("ollama_executable", resolved),
+    )
 
 
 def _http_post_with_retries(
@@ -1228,6 +1317,7 @@ def _call_ollama_rag(system_prompt: str, user_message: str, config: Dict[str, An
         raise RuntimeError("`requests` library is required for Ollama") from exc
 
     config = _resolve_ollama_config(config)
+    _log_ollama_executable_once()
     base_url = str(config["base_url"])
     model = str(config["model"])
     timeout_seconds = int(config["timeout_seconds"])

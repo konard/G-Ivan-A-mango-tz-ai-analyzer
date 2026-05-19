@@ -149,7 +149,7 @@ BL-56 (datetime.utcnow) — независима, tech debt    │
 | **Приоритет** | P1 |
 | **Effort** | S (0.5 д) |
 | **depends_on** | — |
-| **Статус** | `⏳ Waiting` |
+| **Статус** | `✅ Closed` (issue [#195](https://github.com/G-Ivan-A/clarify-engine-ai/issues/195), [PR #200](https://github.com/G-Ivan-A/clarify-engine-ai/pull/200)) |
 | **Источник проблемы** | Отчёт §1.5 / Проблема #2 |
 | **Контекст** | Инсталлятор Ollama для Windows не добавляет путь в системный PATH автоматически. Тестировщик использовал полный путь `C:\Users\ivan\AppData\Local\Programs\Ollama\ollama.exe` в каждой команде. Это усложняет runbook и повторяемость для других АРМ (другой `%USERNAME%`). |
 | **Проблема** | Команда `ollama` не работает в свежей CMD-сессии после установки. Runbook §1, §2 предполагают доступность `ollama` в PATH, но в реальности БА должен либо вручную править PATH, либо копировать полный путь. На разных АРМ путь различается (`%LOCALAPPDATA%` ≠ `C:\Users\ivan\...` у других пользователей). |
@@ -271,7 +271,7 @@ BL-56 (datetime.utcnow) — независима, tech debt    │
 | ID | Задача | Приоритет | Статус | Зависимости | Обоснование | DoD |
 |----|--------|-----------|--------|-------------|-------------|-----|
 | BL-50 | Startup-валидация `.env` (detect `.env.txt`) | P0 | ⏳ Waiting | — | Pilot blocker — silent .env miss приводит к HTTP 404 на Ollama | `tests/test_env_validation.py` зелёный, runbook §1.4 ссылается на BL-50 |
-| BL-51 | Автодетект пути к Ollama + PATH guidance | P1 | ⏳ Waiting | — | Усложнение runbook для не-технических БА | `tests/test_ollama_resolution.py` зелёный, runbook §1 содержит шаг `setx PATH` |
+| BL-51 | Автодетект пути к Ollama + PATH guidance | P1 | ✅ Closed | — | Усложнение runbook для не-технических БА | `tests/test_ollama_resolution.py` зелёный (5 кейсов: 3 DoD + 2 one-shot logging), runbook §1.4a содержит шаг `setx PATH`, §6 обновлён (issue [#195](https://github.com/G-Ivan-A/clarify-engine-ai/issues/195), [PR #200](https://github.com/G-Ivan-A/clarify-engine-ai/pull/200)) |
 | BL-52 | Sync `OLLAMA_MODEL` в `.env.example` | P0 | ⏳ Waiting | BL-50 | Прямой рассинхрон `.env.example` ↔ runbook | `tests/test_env_example_runbook_sync.py` зелёный, default `.env` работает без правки |
 | BL-53 | Streamlit `.env`-кэш: документация + Reload Config | P2 | ⏳ Waiting | — | UX — потеря времени БА на ложную диагностику | Runbook §2/§6 содержит предупреждения, user guide `04_troubleshooting.md` обновлён |
 | **BL-54** | **🔴 Восстановить file uploader в режиме «📊 Анализ ТЗ»** | **P0** | ⏳ Waiting | BL-28, BL-29, BL-41 | **Pilot blocker** — основной use-case недоступен; рассинхрон BL-41 ↔ BL-44/BL-45 | `tests/test_ui_modes.py`, `tests/test_ui_components.py` зелёные; BL-43 E2E повторно зелёный с upload-сценарием |

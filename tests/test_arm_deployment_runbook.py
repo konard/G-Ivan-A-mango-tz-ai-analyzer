@@ -93,6 +93,24 @@ def test_runbook_mentions_bl50_startup_guard() -> None:
     assert ".env.txt" in text
 
 
+def test_runbook_documents_bl51_ollama_path_guard() -> None:
+    """BL-51 (issue #195): runbook must include the ``setx PATH`` step and §6 note.
+
+    Pins three contract points so the ARM regression (Ollama installed under
+    ``%LOCALAPPDATA%`` but not on PATH) cannot slip out of the runbook:
+
+    1. §1.4a section header with the ``setx PATH`` command.
+    2. Explicit warning that CMD must be restarted for ``setx`` to take effect.
+    3. §6 troubleshooting row links ``Connection refused`` to the BL-51 guard.
+    """
+    text = _read(RUNBOOK)
+
+    assert "1.4a" in text and "BL-51" in text
+    assert 'setx PATH "%PATH%;%LOCALAPPDATA%\\Programs\\Ollama"' in text
+    assert "перезапустите CMD" in text or "Закройте текущее окно CMD" in text
+    assert "BL-51 guard" in text
+
+
 def test_startup_guard_recreates_env_from_example_after_deletion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
