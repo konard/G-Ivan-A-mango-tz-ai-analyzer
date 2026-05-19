@@ -48,6 +48,15 @@
   `LABELS` contract and component callables; full suite at 347 tests.
 
 ### Documentation
+- **DOCUMENTATION: BL-45 ARM deployment runbook for Windows CMD + CPU Ollama
+  (issue #176).** Added `docs/runbooks/arm-deployment-ivan.md` with the
+  Ivan Gulienko ARM deployment path: clean Windows CMD install, restart flow,
+  CPU-only Ollama setup for `qwen2.5:7b`, UTF-8/cp1251 guardrails, Streamlit
+  launch via `streamlit run src/ui/app.py`, UI error diagnostics through
+  `debug_error_details: true` and "📥 Скачать логи", plus update and
+  reindexing steps. Added a documentation contract test to keep the runbook
+  aligned with the BL-45 operational scenarios.
+
 - **DOCUMENTATION: BL-40 ADR sync & numbering convention (issue #166).** Pure
   documentation synchronization across `docs/ADR/001..009` with `CONCEPT.md` v2.5
   and the BL-34 architecture-consistency audit. No source/config/contract
