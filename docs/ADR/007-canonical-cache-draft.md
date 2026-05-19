@@ -2,11 +2,21 @@
 
 ## Status
 
-Draft. Verdict: **Pivot**.
+Draft. Verdict: **Pivot**. (reaffirmed 2026-05-19 by BL-40 ADR-sync — see §History v1.1)
 
-Numbering note: this filename follows issue #151 exactly. The repository
-already contains `docs/ADR/007-error-handling.md`, so this draft should be
-renumbered before it is promoted beyond Draft.
+> 🔢 **Numbering Note (007B — Canonical Cache Draft).** This file shares its
+> ADR-007 number with [`007-error-handling.md`](007-error-handling.md)
+> (ADR-007A, **Accepted**). Both documents are kept under the same number
+> by the convention recorded in [`docs/ADR/README.md`](README.md): ADR
+> numbers are stable identifiers, and orthogonal decisions may coexist as
+> long as the filename keeps the topic unambiguous. To disambiguate in
+> discussion, logs, and PR descriptions use **«ADR-007A (Error Handling)»**
+> for the Accepted UI error contract and **«ADR-007B (Canonical Cache /
+> Pivot)»** for this Draft. Renumbering happens **only at promotion**:
+> if and when this draft moves beyond `Pivot`, it will receive a new
+> sequential ADR number; until then the two `007-*` files coexist and
+> their statuses do not conflict (Accepted vs. Draft/Pivot are explicitly
+> orthogonal).
 
 ## Context
 
@@ -146,3 +156,38 @@ same embedding/lookup cost and no LLM generation.
 - Add telemetry before any production pilot: cache hit/miss, selected threshold,
   best similarity, source freshness result, latency saved, token estimate, and
   reviewer override rate.
+
+## Triggers for Revision
+
+Any move beyond the current `Pivot` verdict (towards `Accepted` and a production
+cache integration in `src/pipeline.py`) is **gated by Gate 0 — Stability ≥ 5
+sessions** from [`docs/CONCEPT.md`](../CONCEPT.md) §8.1.1 and the
+[BL-34 architecture-consistency audit](../audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md)
+§CHK-07 (Архитектурные границы). Specifically:
+
+1. **Gate 0 — Stability.** The Pilot pipeline must demonstrate ≥ 5 consecutive
+   MVP/Pilot validation sessions without unresolved Sev-1/Sev-2 regressions
+   *before* canonical cache work moves beyond PoC. Cache integration must not
+   be the first thing the system stabilises against.
+2. **Real-traffic re-run.** The PoC harness must be re-executed with
+   `--embedding-backend bge-m3` against an anonymised historical BA/TZ query
+   dump (not Golden Set replays). Promotion requires `hit_rate >= 30%`,
+   `hit_precision >= 95%`, `accuracy_impact <= 5%` on that corpus.
+3. **Invalidation E2E.** End-to-end test against `source_registry.csv`
+   transitions (`status` change, `sha256_hash` change, row removal) must show
+   zero stale cache hits.
+4. **Telemetry contract.** The telemetry fields listed under §Consequences must
+   already exist as structured log records on the Pilot pipeline so cache
+   behaviour can be audited from day one — not introduced together with the
+   cache itself.
+
+Until all four triggers are met, this ADR remains a Draft/Pivot and the cache
+is **explicitly not** part of the Pilot architecture (CONCEPT.md §2.3
+pre-deploy invariants: «no canonical cache wired into `src/pipeline.py`»).
+
+## History
+
+| Version | Date | Change |
+|---------|------|--------|
+| 1.0 | 2026-05-19 | First Draft. PoC harness `scripts/poc/semantic_cache_poc.py`, `BAAI/bge-m3` measurements at thresholds `0.90 / 0.95 / 0.97`, candidate cache record, invalidation strategy via `source_registry.csv`. Verdict: **Pivot** — not wired into `src/pipeline.py`. |
+| 1.1 | 2026-05-19 | BL-40 (issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)): ADR-sync with CONCEPT.md v2.5 and BL-34 audit. Numbering note reworked to the explicit **«ADR-007A (Error Handling)» / «ADR-007B (Canonical Cache / Pivot)»** notation per [`docs/ADR/README.md`](README.md). Added §Triggers for Revision tying any post-`Pivot` promotion to **Gate 0 — Stability ≥ 5 sessions** (CONCEPT.md §8.1.1) and the BL-34 audit §CHK-07. No change to PoC numbers, candidate record, or invalidation strategy. |

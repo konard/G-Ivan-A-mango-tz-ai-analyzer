@@ -1,10 +1,11 @@
 # ADR-005. LLM audit trail with per-request run_id
 
-**Status:** Accepted
+**Status:** Accepted (2026-05-17; reaffirmed 2026-05-19 by BL-40 ADR-sync — see §History v1.1)
 **Date:** 2026-05-17
+**Last Updated:** 2026-05-19 (BL-40 — added explicit `sanitize_log_record` link, see §History)
 **Owner:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
 **Author of draft:** konard (AI issue solver)
-**Related:** [CONCEPT.md §7.2](../CONCEPT.md), [ADR-004](004-prompt-management.md), [`docs/backlog/2026-05-17_backlog_rag-optimization_v1.md`](../backlog/2026-05-17_backlog_rag-optimization_v1.md) BL-23 / BL-04, [issue #103](https://github.com/G-Ivan-A/clarify-engine-ai/issues/103)
+**Related:** [CONCEPT.md §7.2](../CONCEPT.md), [ADR-004A — Prompt Management](004-prompt-management.md), [`src/llm/masking.py::sanitize_log_record`](../../src/llm/masking.py), [`docs/backlog/2026-05-17_backlog_rag-optimization_v1.md`](../backlog/2026-05-17_backlog_rag-optimization_v1.md) BL-23 / BL-04, [issue #103](https://github.com/G-Ivan-A/clarify-engine-ai/issues/103), [issue #166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)
 
 ---
 
@@ -32,7 +33,13 @@ The client emits structured `INFO` records:
 
 Both records use `extra=` fields and a parseable key=value message. When the
 pipeline JSON formatter is active, those `extra=` fields are serialized as JSON
-and then sanitized again before output.
+and then sanitized again before output via
+[`src/llm/masking.py::sanitize_log_record`](../../src/llm/masking.py) (BL-23
+alias for ADR-003 §4.3 `sanitize_for_log()`). The sanitiser recursively
+applies `mask_text()` to every string value, redacts known secret patterns,
+and is installed as a `logging.Filter` in `src/pipeline.py` so even
+third-party loggers writing through the pipeline JSON formatter pass through
+the same masking boundary.
 
 ## Log Fields
 
@@ -140,3 +147,9 @@ Tradeoffs:
 - **v1.0 (2026-05-17, konard).** Initial Accepted. Defines `LLM_REQUEST` /
   `LLM_RESPONSE`, per-request 12-hex `run_id`, prompt hash fields, parsing
   examples, and rotation policy.
+- **v1.1 (2026-05-19, BL-40, issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)).**
+  ADR-sync. Added explicit link to
+  [`src/llm/masking.py::sanitize_log_record`](../../src/llm/masking.py) (BL-23
+  / ADR-003 §4.3 `sanitize_for_log()`) in §Decision so the masking boundary is
+  no longer described only as «sanitized again before output». No change to
+  field names, JSON examples or rotation policy.

@@ -6,10 +6,14 @@
 **Author of draft:** konard (AI issue solver)
 **Связанные документы:** [CONCEPT.md §6.5](../CONCEPT.md), [ADR-001](001-rag-architecture.md), [`docs/backlog/2026-05-17_backlog_rag-optimization_v1.md`](../backlog/2026-05-17_backlog_rag-optimization_v1.md) BL-08 / BL-23, [issue #94](https://github.com/G-Ivan-A/clarify-engine-ai/issues/94)
 
-> Документ нумеруется как ADR-004, потому что ADR-002 (расширение схемы
-> экспорта) и ADR-003 (мультиагентная оркестрация, draft) были созданы
-> раньше issue #94. Тема — управление промптами, как и просил исходный
-> backlog-итем BL-08.
+> 🔢 **Numbering Note (004A — Prompt Management).** В каталоге `docs/ADR/`
+> совместно с этим документом существует [`004-ui-operation-modes.md`](004-ui-operation-modes.md)
+> — оба ADR официально называются «ADR-004», но описывают **ортогональные**
+> области принятия решений (управление промптами vs. режимы UI). Конвенция
+> номеров и допустимость таких дублей зафиксированы в [`docs/ADR/README.md`](README.md).
+> Для устранения неоднозначности в логах и ссылках используйте кодировку
+> «ADR-004A (Prompt Management)» для этого файла и «ADR-004B
+> (UI Operation Modes)» — для соседнего.
 
 ---
 
@@ -217,3 +221,9 @@ JSON-логгер пайплайна (`src/pipeline.py::configure_json_logging`)
   (`system_classifier_v1.0`, `system_rag_v1.0`, `few_shot_examples_v1.0`),
   changelog с SHA-256, 16 unit-тестов в `tests/test_prompt_loader.py`,
   обратная совместимость с `LLMClient(prompt_path=...)` сохранена.
+- **v1.1 (2026-05-19, BL-40, issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)).**
+  ADR-sync с CONCEPT.md v2.5 и BL-34 audit. Заменён неформальный
+  Numbering Note на явную нотацию **«ADR-004A (Prompt Management)»** vs.
+  **«ADR-004B (UI Operation Modes)»** со ссылкой на конвенцию
+  [`docs/ADR/README.md`](README.md). Содержание решения и API loader'а
+  не меняются.

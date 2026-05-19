@@ -10,6 +10,33 @@
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
 ### Documentation
+- **DOCUMENTATION: BL-40 ADR sync & numbering convention (issue #166).** Pure
+  documentation synchronization across `docs/ADR/001..009` with `CONCEPT.md` v2.5
+  and the BL-34 architecture-consistency audit. No source/config/contract
+  changes. Reaffirmed every Accepted ADR (`001, 002, 004A, 004B, 005, 006,
+  007A, 008, 009`) and explicitly excluded Draft ADRs (`003 Multi-Agent`,
+  `007B Canonical Cache / Pivot`) from the Pilot architecture per CONCEPT.md
+  §2.3 invariants. Promoted the «ADR-NNNA / ADR-NNNB» disambiguation notation
+  in [`docs/ADR/README.md`](docs/ADR/README.md) (orthogonal pairs `004A/004B`,
+  `007A/007B`, status glossary, BL-40 alignment note). Added §History v1.1
+  entries to all reaffirmed ADRs. Highlights:
+  ADR-001 — references BL-22 (`docs/standards/llm-behavior.md`) and BL-34
+  §CHK-01;
+  ADR-002 — explicit **Channel separation** vs. ADR-008 + inline
+  `EXPORT_SCHEMA_VERSION = "1.0"`;
+  ADR-003 — top-level **🚫 Non-Scope for Pilot** block forbidding `agent_id`,
+  `asyncio.Queue`, `parent_run_id`, `agent_trace`, `AGENT_SHARED_SECRET` in
+  `src/`;
+  ADR-004A/004B — formal Numbering Note blockquotes;
+  ADR-005 — explicit `src/llm/masking.py::sanitize_log_record` boundary
+  (BL-23 alias);
+  ADR-006 — new §Security Contract (`file://` exclusion, path-traversal
+  rejection);
+  ADR-007B — Numbering Note paired with 007A + §Triggers for Revision tied
+  to **Gate 0 — Stability ≥ 5 sessions** (CONCEPT.md §8.1.1);
+  ADR-008 — Channel separation vs. ADR-002 + `mask_text()` allow-list;
+  ADR-009 — explicit **Mode Contract** table (`use_parent_context=True` only
+  in Консультация), pinned `parent_context_max_chars: 6000` default.
 - **DOCS: CONCEPT.md → v2.5 SSoT sync (BL-39, issue #164).** Pure documentation
   synchronization (no source/config/contract changes). Bumped header to
   v2.5 / 2026-05-19; expanded §1.1 dual-scope goal (batch + consultation +

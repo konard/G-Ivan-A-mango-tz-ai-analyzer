@@ -1,7 +1,18 @@
 # ADR-007: Graceful UI Error Handling and Retry
 
 ## Status
-Accepted (2026-05-17)
+Accepted (2026-05-17; reaffirmed 2026-05-19 by BL-40 ADR-sync — see §History v1.2)
+
+> 🔢 **Numbering Note (007A — Error Handling).** This file shares its ADR-007
+> number with [`007-canonical-cache-draft.md`](007-canonical-cache-draft.md)
+> (ADR-007B, **Draft / Pivot**). Both documents are kept under the same number
+> by the convention recorded in [`docs/ADR/README.md`](README.md): ADR numbers
+> are stable identifiers, and orthogonal decisions may coexist as long as the
+> filename keeps the topic unambiguous. In discussions, logs, and PR
+> descriptions use **«ADR-007A (Error Handling)»** for this Accepted UI error
+> contract and **«ADR-007B (Canonical Cache / Pivot)»** for the cache draft.
+> The two statuses (Accepted vs. Draft/Pivot) are explicitly orthogonal and do
+> not conflict.
 
 ## Context
 
@@ -125,3 +136,4 @@ log the last failed provider when the LLM fallback chain is exhausted.
 |---------|------|--------|
 | 1.0 | 2026-05-17 | First version: Streamlit retry state, generic error block, guarded logging, and disabled controls for queued generation (BL-13, issue #106). |
 | 1.1 | 2026-05-18 | Added masked downloadable diagnostics and debug-gated remediation details (BL-24b, issue #121). |
+| 1.2 | 2026-05-19 | BL-40 (issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)): ADR-sync. Added explicit **Numbering Note (007A — Error Handling)** paired with [`ADR-007B (Canonical Cache / Pivot)`](007-canonical-cache-draft.md) per [`docs/ADR/README.md`](README.md). No change to error-handling contract, debug flag, masking, or `ui_generation_failed` / `ui_prompt_built` log shapes. |

@@ -1,7 +1,7 @@
 # ADR-001: RAG Architecture with Hybrid Search
 
 ## Status
-Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1.4)
+Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1.4; reaffirmed by BL-40 ADR-sync, v1.5).
 
 ## Context
 - Требуется классификация требований ТЗ с обязательным цитированием (см. [`docs/CONCEPT.md`](../CONCEPT.md), разделы 1 и 4).
@@ -41,7 +41,7 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
 - **Metadata Enrichment (BL-02).** Каждый чанк в ChromaDB обязан содержать `page_number`, `section_title`, `section_number`, `product`, `section_inherited` в дополнение к `source` / `chunk_idx`. Контракт зафиксирован в [`docs/standards/embedding-model.md`](../standards/embedding-model.md) §5.2–5.3; schema-check выполняется при индексации и в `evaluate_rag.py` (BL-05). После issue #109 MVP-порог покрытия searchable metadata установлен на `≥ 65 %`; продуктовая цель цитируемости `≥ 95 %` остаётся целевой метрикой пилота.
 - **STRICT_MODE (BL-03).** Флаги `strict_rag_mode` / `strict_min_score` в `configs/embedding_config.yaml` блокируют LLM-вызов при пустом или слабом контексте. Снижает риск R-01 (галлюцинации); подбор порога — на Golden Set.
 - **Masked RAG channel (BL-04).** Флаг `mask_rag_context` в `configs/embedding_config.yaml` включает применение `mask_context_chunks` ко всем чанкам перед формированием промпта. NFR-04 / NFR-05.
-- **Temperature lock (BL-22).** Блок `decoding:` в [`configs/llm_config.yaml`](../../configs/llm_config.yaml) (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`) подключается `LLMClient`'ом ко всем провайдерам fallback-цепочки. Цель — детерминизм regression-прогонов Golden Set (BL-05) и стабильность F1.
+- **Temperature lock (BL-22).** Блок `decoding:` в [`configs/llm_config.yaml`](../../configs/llm_config.yaml) (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`) подключается `LLMClient`'ом ко всем провайдерам fallback-цепочки. Канонические значения, допустимый коридор и критерии замены зафиксированы в [`docs/standards/llm-behavior.md`](../standards/llm-behavior.md) §2.1 / §4 / §6. Цель — детерминизм regression-прогонов Golden Set (BL-05) и стабильность F1.
 - **Log sanitization (BL-23).** `src/llm/masking.py::sanitize_log_record` подключается как `logging.Filter` в `src/pipeline.py` и применяется к отчётам `evaluate_rag.py`. Контракт повторяет ADR-003 §4.3 (`sanitize_for_log()`). NFR-05.
 
 ## Triggers for Revision
@@ -55,7 +55,9 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
 ## References
 - [`docs/CONCEPT.md`](../CONCEPT.md) — концепция MVP, разделы 3 (Описание решения) и 5 (Архитектура и стек).
 - [`docs/standards/embedding-model.md`](../standards/embedding-model.md) — стандарт модели эмбеддингов.
+- [`docs/standards/llm-behavior.md`](../standards/llm-behavior.md) — стандарт LLM Decoding Behavior (BL-22 single source of truth для блока `decoding:`).
 - [`docs/analysis/2026-05-12_review_mvp-context_v1.md`](../analysis/2026-05-12_review_mvp-context_v1.md) — ревью концепции MVP (рекомендация MUST: заполнить ADR-001).
+- [`docs/audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md`](../audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md) §3 `CHK-01` — независимое подтверждение соответствия гибридного поиска и чанкинга (`512 / 64`, guardrails `[384, 768]`) контракту ADR-001.
 
 ## History
 | Версия | Дата | Изменение |
@@ -65,3 +67,4 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
 | 1.2 | 2026-05-17 | BL-16a (issue #87): добавлен раздел «Sprint 1 Addenda» (Metadata Enrichment BL-02, STRICT_MODE BL-03, Masked RAG channel BL-04, Temperature lock BL-22, Log sanitization BL-23). Triggers for Revision дополнены пунктом про переход на `chunk_size=512` (BL-16b) и расширение fallback-цепочки. |
 | 1.3 | 2026-05-17 | BL-02 hardening (issue #109): metadata coverage MVP-порог уточнён до `≥ 65 %`, добавлен `section_inherited` и section propagation с защитой от ghost inheritance. |
 | 1.4 | 2026-05-19 | BL-32 (issue #152): Consequences и Triggers синхронизированы с принятым окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`; изменение окна явно требует reindex KB. |
+| 1.5 | 2026-05-19 | BL-40 (issue #166): ADR-sync с `CONCEPT.md v2.5` и BL-34 audit. Добавлена ссылка на стандарт [`docs/standards/llm-behavior.md`](../standards/llm-behavior.md) в §Sprint 1 Addenda (BL-22) и в References; добавлена явная ссылка на §3 `CHK-01` BL-34 audit. Контракт `512 / 64`, `[384, 768]` и Triggers без изменений. |

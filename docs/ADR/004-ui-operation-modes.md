@@ -1,7 +1,16 @@
 # ADR-004: Two UI Operation Modes — "Анализ ТЗ" (stateless) and "Консультация" (stateful, history ≤ 6)
 
+> 🔢 **Numbering Note (004B — UI Operation Modes).** В каталоге `docs/ADR/`
+> существует и второй документ под номером `004` — [`004-prompt-management.md`](004-prompt-management.md)
+> (ADR-004A, Prompt Management). Оба файла официально называются «ADR-004»,
+> описывают **ортогональные** области принятия решений и сохраняются с тем
+> же номером по конвенции [`docs/ADR/README.md`](README.md). Для однозначности
+> в обсуждениях и аудит-логах используйте кодировку «ADR-004B
+> (UI Operation Modes)» для этого файла и «ADR-004A (Prompt Management)»
+> — для соседнего.
+
 ## Status
-Accepted (2026-05-17)
+Accepted (2026-05-17; reaffirmed 2026-05-19 by BL-40 ADR-sync — см. §History v1.1)
 
 ## Context
 
@@ -127,3 +136,4 @@ missing or malformed.
 | Версия | Дата | Изменение |
 |--------|------|-----------|
 | 1.0 | 2026-05-17 | Первая редакция: фиксация двух режимов UI (Анализ ТЗ — stateless, Консультация — stateful с историей ≤ 6 сообщений), кнопка очистки, сброс при смене режима, логирование оценки токенов (issue #93, BL-07). |
+| 1.1 | 2026-05-19 | BL-40 (issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)): ADR-sync. Добавлен явный «Numbering Note (004B — UI Operation Modes)» со ссылкой на [`docs/ADR/README.md`](README.md) и кодировкой ADR-004A/004B. Контракт `ui.max_history_messages: 6` и `_ensure_mode_state` подтверждены без изменений; код и тесты не модифицируются. |
