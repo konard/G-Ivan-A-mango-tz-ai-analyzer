@@ -9,6 +9,30 @@
 ### ⚠️ BREAKING CHANGES
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
+### QA
+- **QA: BL-43 Post-fix Smoke & E2E verification passed (issue #172).** Post-fix
+  smoke- и E2E-верификация после BL-41 (UI refactor, #168) и BL-42 (Fallback
+  chain sync, #170) проведена на снепшоте `d1934c8`. Pre-deploy инварианты
+  соблюдены: батч-цепочка `gigachat → openrouter → ollama` и чат-цепочка
+  `gigachat → ollama` сходятся с `configs/llm_config.yaml`; `strict_embedder:
+  true` и decoding-lock (`temperature=0.1, top_p=0.9, seed=42,
+  max_tokens=1024`) применяются на каждом провайдер-вызове; имя отчёта
+  следует шаблону `<basename>_report_<runId8>.{xlsx,docx,md}`; live CLI-прогон
+  (`python -m src.pipeline … sample_tz.xlsx`) выдаёт корректные
+  `PIPELINE_START` / `PIPELINE_END` события с pipeline-level UUID4 run_id
+  (`039c62128a964333804f11f56763a7b8`) и per-requirement 12-hex LLM run_id
+  (5 уникальных); `_hash_embedding` fallback отсутствует в логах; STRICT_MODE
+  детерминированно возвращает «НД» при пустом контексте; export-contract
+  v1.0 (`schema_version: "1.0"`, 7 базовых полей, MVP-колонки `[Статус]
+  [Комментарий] [Confidence] [RunID]`, Ref-локаторы, UUID4 run_id) проверен
+  по xlsx/docx/md; `LLM_REQUEST` / `LLM_RESPONSE` несут `prompt_sha256`,
+  decoding-lock и маскированные PII (`[EMAIL]`, `[PHONE]`, `[DOMAIN]`);
+  CPU-only torch и env-placeholder pattern в `requirements.txt` /
+  `.env.example` подтверждают ARM-готовность. Полный тест-сьют — 351
+  passed / 0 failed. P0/P1-регрессий не обнаружено. Детали и подтверждающие
+  ссылки на тесты:
+  [`docs/audit/2026-05-20_bl-43-smoke-e2e-report_v1.md`](docs/audit/2026-05-20_bl-43-smoke-e2e-report_v1.md).
+
 ### Changed
 - **CONFIG & DOCS: BL-42 sync LLM chains to production reality (GigaChat primary)
   (issue #170).** Production fallback chains для batch- и chat-режимов
