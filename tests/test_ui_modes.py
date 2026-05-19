@@ -354,24 +354,90 @@ def test_build_analysis_export_row_uses_allowed_columns_only() -> None:
         [{"source": "doc.pdf"}, {"source": "doc.pdf"}, {"source": "other.pdf"}],
     )
     assert row == {
-        "requirement_id": "ui-query-1",
-        "requirement_text": "Q",
-        "classification": "",
-        "reasoning": "A",
-        "citations": "doc.pdf; other.pdf",
+        "id": 1,
+        "Исходное требование": "Q",
+        "[Статус]": "НД",
+        "[Комментарий]": "A",
+        "[Confidence]": 0.0,
+        "[RunID]": "",
+        "locator": {"type": "ui_query"},
+        "ref": "doc.pdf; other.pdf",
     }
 
 
 def test_analysis_export_button_disabled_without_rows(monkeypatch) -> None:
     calls = []
+    radio_calls = []
     st.session_state.clear()
 
+    monkeypatch.setattr(st, "download_button", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(st, "radio", lambda *args, **kwargs: radio_calls.append((args, kwargs)))
+
+    app._render_analysis_export_button()
+
+    assert st.session_state[app.SESSION_EXPORT_FORMAT_KEY] == "xlsx"
+    assert radio_calls
+    assert radio_calls[0][1]["disabled"] is True
+    assert calls
+    assert calls[0][0][0] == "📥 Скачать отчет (.xlsx)"
+    assert calls[0][1]["disabled"] is True
+
+
+def test_analysis_export_button_uses_selected_router_format(monkeypatch) -> None:
+    calls = []
+    st.session_state.clear()
+    st.session_state[app.SESSION_EXPORT_FORMAT_KEY] = "md"
+    st.session_state["analysis_export_rows"] = [
+        {
+            "id": 1,
+            "Исходное требование": "Q",
+            "[Статус]": "НД",
+            "[Комментарий]": "A",
+            "[Confidence]": 0.0,
+            "[RunID]": "run-12345678",
+            "locator": {"type": "ui_query"},
+            "ref": "doc.pdf",
+        }
+    ]
+
+    monkeypatch.setattr(st, "radio", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(st, "download_button", lambda *args, **kwargs: calls.append((args, kwargs)))
 
     app._render_analysis_export_button()
 
     assert calls
-    assert calls[0][0][0] == "📥 Скачать отчет (.xlsx)"
+    assert calls[0][0][0] == "📥 Скачать отчет (.md)"
+    assert calls[0][1]["file_name"].endswith(".md")
+    assert calls[0][1]["mime"] == "text/markdown; charset=utf-8"
+    assert b"Q" in calls[0][1]["data"].getvalue()
+    assert calls[0][1]["disabled"] is False
+
+
+def test_analysis_export_button_shows_friendly_router_error(monkeypatch) -> None:
+    calls = []
+    errors = []
+    st.session_state.clear()
+    st.session_state[app.SESSION_EXPORT_FORMAT_KEY] = "docx"
+    st.session_state["analysis_export_rows"] = [
+        {
+            "id": 1,
+            "Исходное требование": "Q",
+            "[Статус]": "unexpected",
+            "[Комментарий]": "A",
+            "[Confidence]": 0.0,
+            "[RunID]": "run-12345678",
+        }
+    ]
+
+    monkeypatch.setattr(st, "radio", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(st, "error", lambda message: errors.append(message))
+    monkeypatch.setattr(st, "download_button", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    app._render_analysis_export_button()
+
+    assert errors
+    assert errors[0].startswith("Ошибка генерации файла:")
+    assert calls[0][0][0] == "📥 Скачать отчет (.docx)"
     assert calls[0][1]["disabled"] is True
 
 

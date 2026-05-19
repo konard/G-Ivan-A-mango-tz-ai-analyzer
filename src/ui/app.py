@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -63,6 +64,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LLM_CONFIG_PATH = PROJECT_ROOT / "configs" / "llm_config.yaml"
 EMBEDDING_CONFIG_PATH = PROJECT_ROOT / "configs" / "embedding_config.yaml"
 UI_CONFIG_PATH = PROJECT_ROOT / "configs" / "ui_config.yaml"
+EXPORT_CONFIG_PATH = PROJECT_ROOT / "configs" / "export_config.yaml"
 ENV_PATH = PROJECT_ROOT / ".env"
 SOURCES_DIR = PROJECT_ROOT / "knowledge_base" / "sources"
 DEFAULT_CITATIONS_BASE_URL = "http://localhost:8000/docs"
@@ -107,6 +109,17 @@ SESSION_PENDING_QUERY_KEY = "pending_query"
 SESSION_PENDING_MODE_KEY = "pending_mode"
 SESSION_PENDING_RUN_ID_KEY = "pending_run_id"
 SESSION_LAST_ANALYSIS_RESULT_KEY = "last_analysis_result"
+SESSION_EXPORT_FORMAT_KEY = "analysis_export_format"
+EXPORT_FORMAT_LABELS: Dict[str, str] = {
+    "xlsx": ".xlsx",
+    "docx": ".docx",
+    "md": ".md",
+}
+EXPORT_MIME_TYPES: Dict[str, str] = {
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "md": "text/markdown; charset=utf-8",
+}
 
 # BL-08 (issue #94): the RAG system prompt is now a versioned artefact in
 # ``prompts/``. The Streamlit module loads it lazily inside ``main()`` so an
@@ -147,6 +160,31 @@ def load_llm_config(path: Path = LLM_CONFIG_PATH) -> Dict[str, Any]:
         st.warning(f"Failed to parse {path.name}: {exc}")
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def load_export_config(path: Path = EXPORT_CONFIG_PATH) -> Dict[str, Any]:
+    """Load UI export defaults from ``configs/export_config.yaml``."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {"export": {}}
+    return data if isinstance(data, dict) else {"export": {}}
+
+
+def get_default_export_format(config: Optional[Dict[str, Any]] = None) -> str:
+    export_cfg = (config or load_export_config()).get("export", {})
+    if not isinstance(export_cfg, dict):
+        return "xlsx"
+    configured = str(export_cfg.get("default_format", "xlsx")).strip().lower().lstrip(".")
+    return configured if configured in EXPORT_FORMAT_LABELS else "xlsx"
+
+
+def _ensure_export_format_state() -> str:
+    current = str(st.session_state.get(SESSION_EXPORT_FORMAT_KEY) or "").lower()
+    if current not in EXPORT_FORMAT_LABELS:
+        current = get_default_export_format()
+        st.session_state[SESSION_EXPORT_FORMAT_KEY] = current
+    return current
 
 
 def load_ui_config(path: Path = UI_CONFIG_PATH) -> Dict[str, Any]:
@@ -1316,28 +1354,66 @@ def _build_analysis_export_row(
         if source and source not in citations:
             citations.append(source)
     return {
-        "requirement_id": "ui-query-1",
-        "requirement_text": query,
-        "classification": "",
-        "reasoning": answer,
-        "citations": "; ".join(citations),
+        "id": 1,
+        "Исходное требование": query,
+        "[Статус]": "НД",
+        "[Комментарий]": answer,
+        "[Confidence]": 0.0,
+        "[RunID]": "",
+        "locator": {"type": "ui_query"},
+        "ref": "; ".join(citations),
     }
 
 
 def _render_analysis_export_button() -> None:
+    from src.exporters import ExportRouter
+
     rows = st.session_state.get("analysis_export_rows", [])
     disabled = not bool(rows)
-    if rows:
-        from src.utils.export import export_to_excel
+    selected_format = _ensure_export_format_state()
+    st.radio(
+        "Формат отчета",
+        options=list(EXPORT_FORMAT_LABELS),
+        format_func=lambda value: EXPORT_FORMAT_LABELS.get(value, value),
+        key=SESSION_EXPORT_FORMAT_KEY,
+        horizontal=True,
+        disabled=disabled,
+    )
+    st.caption("Режим сохранения: create_new")
 
-        data = export_to_excel(rows)
+    selected_format = str(st.session_state.get(SESSION_EXPORT_FORMAT_KEY) or "xlsx").lower()
+    if selected_format not in EXPORT_FORMAT_LABELS:
+        selected_format = "xlsx"
+        st.session_state[SESSION_EXPORT_FORMAT_KEY] = selected_format
+
+    if rows:
+        try:
+            router = ExportRouter(config_path=EXPORT_CONFIG_PATH)
+            run_id = str(rows[0].get("run_id") or rows[0].get("[RunID]") or _new_run_id())
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                output_path = router.export(
+                    rows,
+                    output_dir=tmp_dir,
+                    output_format=selected_format,
+                    run_id=run_id,
+                    output_mode="create_new",
+                )
+                data = BytesIO(Path(output_path).read_bytes())
+                file_name = Path(output_path).name
+        except Exception as exc:  # noqa: BLE001 - Streamlit must show a friendly error.
+            st.error(f"Ошибка генерации файла: {exc}")
+            data = BytesIO()
+            file_name = f"clarify-analysis-report.{selected_format}"
+            disabled = True
     else:
         data = BytesIO()
+        file_name = f"clarify-analysis-report.{selected_format}"
+
     st.download_button(
-        "📥 Скачать отчет (.xlsx)",
+        f"📥 Скачать отчет (.{selected_format})",
         data=data,
-        file_name="clarify-analysis-report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        file_name=file_name,
+        mime=EXPORT_MIME_TYPES[selected_format],
         disabled=disabled,
     )
 

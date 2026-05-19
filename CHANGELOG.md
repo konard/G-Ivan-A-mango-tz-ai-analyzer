@@ -31,6 +31,10 @@
   with `parent_id` / `section_id` / `parent_text`.
 
 ### Added
+- **BL-29 (issue #150):** KB UI analysis export now exposes `.xlsx`, `.docx`,
+  and `.md` format selectors with session-state persistence, keeps the MVP
+  mode locked to `create_new`, and generates downloads through `ExportRouter`
+  with a friendly Streamlit error when export generation fails.
 - **BL-27 (issue #146):** Accepted export-markup v1.0 as the shared
   `.xlsx` / `.docx` / `.md` result contract, added Pydantic `ExportRow`
   validation for the 7 required fields plus `Ref` / schema metadata, and
