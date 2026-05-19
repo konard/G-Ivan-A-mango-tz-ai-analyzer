@@ -7,6 +7,30 @@
 ## [Unreleased]
 
 ### Documentation
+- **DOCUMENTATION: issue #192 — Sprint 5 kickoff (BL-53, BL-55) + sub-issues.**
+  Сформирован kickoff-документ Sprint 5
+  [`docs/analysis/2026-05-19_sprint-5-kickoff_v1.md`](docs/analysis/2026-05-19_sprint-5-kickoff_v1.md)
+  по §7 «План реализации» бэклога
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md):
+  scope Sprint 5 — **BL-53** (Document Streamlit `.env`/`configs/*.yaml`
+  cache behaviour + optional «Reload Config» debug button, P2) и **BL-55**
+  (First-response UX — spinner text update + optional «Прогреть модель»
+  warmup button, P2). Sprint 5 — два P2-issue UX-polish, закрывающие
+  оставшиеся проблемы пилотного тестирования на АРМ
+  ([issue #182](https://github.com/G-Ivan-A/clarify-engine-ai/issues/182)).
+  В отличие от прецедента Sprint 4 (issue #187, PR #188), где kickoff
+  содержал «формулировки для копирования PO», в Sprint 5 PO явно делегирует
+  создание sub-issues solver-у, поэтому GitHub issues открыты сразу в этом
+  же потоке: [#198 — BL-53](https://github.com/G-Ivan-A/clarify-engine-ai/issues/198)
+  (Streamlit cache docs + reload button) и
+  [#199 — BL-55](https://github.com/G-Ivan-A/clarify-engine-ai/issues/199)
+  (spinner text + warmup button). Документ фиксирует Definition of Ready /
+  Definition of Done, риски и митигацию, открытые вопросы для PO, MUST/
+  SHOULD/MAY-рекомендации. Sprint 5 **не блокирует и не блокируется**
+  Sprint 4 (pilot blocker BL-54) и Hot-fix Sprint (BL-52, BL-56) — обе
+  задачи UX-polish, изолированы от RAG-пайплайна и могут стартовать после
+  закрытия Sprint 4. Sync §0.6 v1.5 (`📝 New → 🟡 In Progress` для BL-53/
+  BL-55) и Sprint-5 Execution Report — отдельными последующими PR.
 - **DOCUMENTATION: issue #187 — Sprint 4 kickoff (BL-50, BL-51, BL-54).**
   Сформирован kickoff-документ Sprint 4
   [`docs/analysis/2026-05-20_sprint-4-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-kickoff_v1.md)
