@@ -7,6 +7,19 @@
 ## [Unreleased]
 
 ### Documentation
+- **DOCUMENTATION: issue #190 — Sprint 4 parallel BL-48 installer PoC kickoff.**
+  Сформирован kickoff-документ
+  [`docs/analysis/2026-05-20_sprint-4-parallel-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-parallel-kickoff_v1.md)
+  по §7 «Sprint 4 (parallel)» бэклога
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md).
+  Документ фиксирует scope **BL-48 ARM Installer L1** (`clarify-setup.cmd`
+  + `clarify-setup.py` First-Run wizard), зависимости BL-50..BL-52,
+  Definition of Ready / Definition of Done, риски, открытые вопросы для PO
+  и готовую формулировку GitHub issue. Первый implementation PR BL-48
+  ограничивается Installer L1 / PoC-1 из BL-47 research §6; BL-48.1
+  (KB Update UI), BL-48.2 (TZ upload tab) и BL-48.3 (ADR-011) вынесены
+  в отдельные последующие issues после PO-согласования. Документ остаётся
+  `Draft → Review`; кодовые изменения стартуют только после Accepted PO.
 - **DOCUMENTATION: issue #187 — Sprint 4 kickoff (BL-50, BL-51, BL-54).**
   Сформирован kickoff-документ Sprint 4
   [`docs/analysis/2026-05-20_sprint-4-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-kickoff_v1.md)
