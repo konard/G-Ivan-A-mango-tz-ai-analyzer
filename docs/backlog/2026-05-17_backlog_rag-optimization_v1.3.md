@@ -460,6 +460,6 @@ Sprint 1–2. Они зафиксированы черновиком в
 
 | ID | Задача | Причина откладывания | Триггер возврата |
 |----|--------|---------------------|------------------|
-| BL-30 | Canonical Query Cache | Требует ADR, валидации на Golden Set | После Sprint 3, наличие cross_doc категории |
+| BL-30 | Canonical Query Cache | Требует ADR, валидации на Golden Set; вынесен в изолированный Track 2 backlog [`2026-05-19_track2-cache-validation_v2.md`](2026-05-19_track2-cache-validation_v2.md) со статусом `🟡 DEFERRED` | После Sprint 3, наличие cross_doc категории, прохождение Gate 0 и согласование PO |
 | BL-31 | LLM-нормализация DOCX | Зависит от результатов BL-28 (Export) | Если атомарность критична для экспорта |
 | BL-32 | Config Sync | Tech debt, не блокирует функциональность | После стабилизации BL-27..BL-29 |

@@ -34,6 +34,10 @@
   with `parent_id` / `section_id` / `parent_text`.
 
 ### Added
+- **BL-35 (issue #158):** Added the isolated Track 2 cache-validation backlog
+  `docs/backlog/2026-05-19_track2-cache-validation_v2.md` with `🟡 DEFERRED`
+  status, activation gates 0→3, `T2-BL-*` task sequencing, isolation rules,
+  and links to ADR-007, CONCEPT NFR-07, and the main backlog v1.3.
 - **BL-31 (issue #153):** Added isolated offline DOCX structure enrichment.
   `scripts/tools/enrich_docx_structure.py` parses `.docx` files and writes
   atomized JSON with deterministic span slicing, SHA-256 `exact_text`
