@@ -9,6 +9,35 @@
 ### ⚠️ BREAKING CHANGES
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
+### Documentation
+- **DOCS: CONCEPT.md → v2.5 SSoT sync (BL-39, issue #164).** Pure documentation
+  synchronization (no source/config/contract changes). Bumped header to
+  v2.5 / 2026-05-19; expanded §1.1 dual-scope goal (batch + consultation +
+  multi-format export); added two-mode workflow table to §2.1
+  («📊 Анализ ТЗ» stateless / «💬 Консультация» stateful, history ≤ 6); new
+  §2.3 Pre-deploy Invariants block (six invariants from BL-34: strict_embedder,
+  zero source modification, ADR-003/007 read-only boundary, PoC location,
+  decoding-lock centralization, masking-rules single source); rewrote FR-06
+  (pipeline vs UI export channels, `EXPORT_SCHEMA_VERSION = "1.0"`, 7 fields),
+  FR-07 (sidebar-radio modes, two-layer history limit, graceful error UX),
+  FR-08 (dual `run_id` — pipeline UUID4 + LLM `uuid4.hex[:12]`, full audit
+  event set incl. `PIPELINE_START/END`, `LLM_REQUEST/RESPONSE`,
+  `ui_generation_failed`); refreshed NFR-03/06/08 and added new NFR-10
+  (prompt drift control via SHA-256 + `decoding_lock applied`); expanded §6.2
+  component registry from 10 to 15 (added `ParentAwareRetriever`,
+  `IterativeRetriever`, `QueryExpansionRetriever`, `PromptLoader`,
+  `ExportRouter`, `ErrorHandler`); split §6.3 into §6.3.1 «Анализ ТЗ»
+  (HARD-LOCK one-shot) and §6.3.2 «Консультация» (opt-in QueryExpansion /
+  Iterative / ParentAware); §6.6 now lists concrete config values (chunk_size
+  512/64, rrf_k=60, `strict_rag_mode`, `parent_context_max_chars`); added
+  risks R-10 (prompt drift), R-11 (Streamlit state corruption), R-12
+  (cache/Pivot misuse); added Gate 0 «Stability ≥ 5 sessions» and pre-deploy
+  invariant check to §8.1.1; added open questions 8 (cache validation trigger,
+  BL-33) and 9 (Timeline Production UI Gateway, ADR-003 Concept §8.1.3) to
+  §10; expanded §11 to reference ADR-004 (prompt + UI), ADR-005, ADR-006,
+  ADR-007 (canonical-cache + error-handling), ADR-008, ADR-009 and
+  `docs/audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md`.
+
 ### Fixed
 - **PATCH: BL-34-F drift cleanup & audit recommendations (issue #162).**
   Clarified ADR numbering/export-channel docs, added the CONCEPT pre-deploy
