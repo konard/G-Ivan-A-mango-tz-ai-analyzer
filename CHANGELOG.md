@@ -6,6 +6,52 @@
 
 ## [Unreleased]
 
+### Documentation
+- **DOCS: BL-53 Streamlit `.env` / `configs/*.yaml` cache documented (issue #198).**
+  По отчёту пилотного тестирования на АРМ
+  ([issue #182](https://github.com/G-Ivan-A/clarify-engine-ai/issues/182) §1.6 /
+  Проблема #4) Streamlit держит результат `load_dotenv()` и
+  `yaml.safe_load()` в памяти процесса до его завершения — кнопка
+  `Rerun` повторно `.env` / `configs/*.yaml` не перечитывает, hot-reload
+  Streamlit срабатывает только на изменения в `src/`. БА из-за этого
+  тратил 5–10 минут на ложную диагностику «правка `.env` не
+  применилась». В рамках минимального scope BL-53 (документация +
+  smoke-тест, см. бэклог
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md)
+  §4.5) обновлены:
+  [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md)
+  §2 — рядом с командой `streamlit run src/ui/app.py` добавлен блок
+  «⚠️ BL-53 — кэш `.env` и `configs/*.yaml`» с явным чек-листом
+  `Ctrl+C` → `streamlit run` → `Ctrl+Shift+R`; §6 — добавлен абзац-
+  префикс «прежде чем искать ошибку, проверьте кэш» со ссылкой на §2
+  и новая строка в таблице «Типовые ошибки» («Правка `.env` /
+  `configs/*.yaml` не применилась»).
+  [`docs/user_guide/04_troubleshooting.md`](docs/user_guide/04_troubleshooting.md)
+  — новый раздел «⚙️ Изменения в `.env` / `configs/*.yaml` не
+  применяются» c BA-понятным объяснением, почему `Rerun` / обновление
+  вкладки браузера не помогают, и тем же тремя-шаговым чек-листом.
+  Покрытие:
+  [`tests/test_arm_deployment_runbook.py`](tests/test_arm_deployment_runbook.py)
+  расширен четырьмя кейсами BL-53 — §2 содержит предупреждение, §6
+  содержит обратную ссылку, user guide содержит новый раздел,
+  CHANGELOG содержит маркер BL-53. PII / маскирование: ни runbook,
+  ни user guide, ни сообщения в табличках не содержат значений
+  переменных окружения — только имена файлов и UI-инструкции,
+  поэтому `sanitize_log_record` (BL-23) затрагивать не нужно.
+  Опциональная часть DoD («🔄 Перезагрузить конфиги» в сайдбаре при
+  `ui.debug_mode: true`) отложена в BL-57+ согласно
+  Scope Note контракта BL-53 («часть „опциональная кнопка“ может быть
+  отложена … Минимальный scope — только runbook + user guide +
+  smoke-тест»); каталог
+  [`src/ui/components/`](src/ui/components/) пока не содержит
+  `sidebar.py`, поэтому внедрение требует отдельного PR с проектным
+  решением, где разместить кнопку без регрессии BL-41 / BL-54.
+  Backward compat: документация фиксирует уже существующее поведение
+  Streamlit (см. https://docs.streamlit.io/library/advanced-features/caching),
+  поведение приложения не меняется. Backlog v1.5 §0.6 строка BL-53
+  переведена в `🟡 In Progress` со ссылкой на
+  [PR #205](https://github.com/G-Ivan-A/clarify-engine-ai/pull/205).
+
 ### Code
 - **CODE: BL-50 `.env` startup validation (issue #194).** Добавлен
   startup-guard в новом модуле
