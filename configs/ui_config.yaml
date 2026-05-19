@@ -1,5 +1,11 @@
 ui:
   debug_error_details: false
+  # BL-55 (issue #199): renders the «🔥 Прогреть модель» warmup button in the
+  # sidebar even when OLLAMA_BASE_URL points at a remote host. Operators flip
+  # this on locally to verify Ollama responds to the warmup ping without
+  # editing code; it stays off in shipped configs so cloud pilots never see
+  # the button.
+  debug_mode: false
   # BL-54 (issue #196): default UI in «📊 Анализ ТЗ» is the file-upload
   # pipeline flow described in `docs/user_guide/02_interface_elements.md` §2.
   # Set `analysis_query_mode: true` only to opt back into the legacy

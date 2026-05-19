@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
+from src.ui.components.sidebar import render_warmup_button
 from src.ui.constants import (
     LABELS,
     MODE_CONSULTATION,
@@ -115,6 +116,7 @@ def render_sidebar(
     max_history_messages: int,
     env_path: Optional[Path] = None,
     retrieval_settings: Optional[Dict[str, Any]] = None,
+    ui_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Render the Streamlit sidebar and return user choices.
 
@@ -122,6 +124,9 @@ def render_sidebar(
     without re-importing module-level constants from ``src.ui.app``.
     ``retrieval_settings`` is the resolved BL-48.6 slider config; when omitted
     the function falls back to safe defaults so old callers keep working.
+    ``ui_config`` is the raw ``configs/ui_config.yaml`` mapping forwarded to
+    the BL-55 warmup button so it can read ``ui.debug_mode`` without re-loading
+    the file.
     """
     slider_cfg = retrieval_settings or resolve_retrieval_settings()
     tooltip = str(slider_cfg.get("tooltip") or "").strip()
@@ -181,6 +186,11 @@ def render_sidebar(
             )
 
         st.divider()
+        # BL-55 (issue #199): the warmup button only renders when debug_mode is
+        # true OR OLLAMA_BASE_URL resolves to localhost — see
+        # ``src/ui/components/sidebar.py::should_render_warmup_button``.
+        render_warmup_button(ui_config)
+
         st.caption(LABELS["sidebar_fallback_caption"])
         if retriever_info:
             st.caption(

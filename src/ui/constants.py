@@ -195,9 +195,33 @@ LABELS: Dict[str, str] = {
     "export_router_error_template": "Ошибка генерации файла: {error}",
     # Spinners
     "spinner_search": "Ищем релевантные фрагменты в базе знаний…",
-    "spinner_llm": "Спрашиваем LLM (GigaChat → OpenRouter → Ollama)…",
+    # BL-55 (issue #199): the wording must explain to BAs why the first request
+    # on CPU-only АРМ takes longer than the regular 5–15 sec, so they do not
+    # think the UI froze. Keep «60–90 сек» in sync with the runbook §1 wording
+    # and the user guide warning block.
+    "spinner_llm": (
+        "Спрашиваем LLM (GigaChat → OpenRouter → Ollama)… "
+        "⏱ Первый ответ на CPU может занять 60–90 сек."
+    ),
     "spinner_retriever_init": "Инициализация поискового движка (BM25 + bge-m3 + ChromaDB)…",
     "spinner_llm_init": "Инициализация LLM-клиента…",
+    # BL-55 warmup button copy (issue #199): the button only renders when
+    # ``ui.debug_mode`` is true OR ``OLLAMA_BASE_URL`` resolves to localhost,
+    # so we never flood a remote Ollama with warmup pings.
+    "sidebar_warmup_button": "🔥 Прогреть модель",
+    "sidebar_warmup_help": (
+        "Отправляет фоновый запрос к локальной Ollama, чтобы первый "
+        "ответ модели не занимал 60–90 сек. Виден только в debug-режиме "
+        "или когда OLLAMA_BASE_URL указывает на localhost."
+    ),
+    "sidebar_warmup_in_progress": (
+        "Прогреваем Ollama… первый ответ после прогрева — 5–15 сек."
+    ),
+    "sidebar_warmup_success": "✅ Ollama прогрета (keep_alive=10m).",
+    "sidebar_warmup_error": (
+        "Ollama не отвечает на прогрев. См. runbook §6 / `docs/runbooks/"
+        "arm-deployment-ivan.md`."
+    ),
     # Errors
     "error_initialisation": "Не удалось подготовить поиск по базе знаний.",
     "error_no_saved_query": "Нет сохранённого запроса для повторной попытки.",
