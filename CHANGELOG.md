@@ -7,6 +7,25 @@
 ## [Unreleased]
 
 ### Documentation
+- **DOCUMENTATION: issue #187 — Sprint 4 kickoff (BL-50, BL-51, BL-54).**
+  Сформирован kickoff-документ Sprint 4
+  [`docs/analysis/2026-05-20_sprint-4-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-kickoff_v1.md)
+  по §7 «План реализации» бэклога
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md):
+  scope Sprint 4 — **BL-50** (`.env` startup validation, P0), **BL-51**
+  (auto-detect Ollama path, P1), **🔴 BL-54** (Restore file uploader в режиме
+  «📊 Анализ ТЗ», P0, **pilot blocker** — регресс BL-41). Документ фиксирует
+  Definition of Ready / Definition of Done, риски и митигацию, открытые
+  вопросы для PO, а также содержит готовые формулировки трёх sub-issues
+  (Labels / Milestone `Sprint 4 — Pilot Readiness & Automation` / Linked
+  Backlog / Depends On / 🎯 Цель / 👤 User Story / 🛡 Контракт / 📋
+  Рекомендации / ✅ DoD / 📦 Scope Note) — готовы к копированию в GitHub
+  UI Product Owner'ом после Accepted-ревью. Документ остаётся `Draft →
+  Review`, кодовые изменения и сами GitHub sub-issues стартуют только
+  после Accepted PO. Sync §0.6 v1.5 (`📝 New → 🟡 In Progress` для трёх
+  задач) и Sprint-4 Execution Report — отдельными последующими PR.
+  Параллельный BL-48 (installer PoC) вынесен в самостоятельный поток и
+  не входит в DoD Sprint 4 для сохранения фокуса на pilot blocker BL-54.
 - **DOCUMENTATION: issue #182 — ARM pilot test fixes backlog branch + v1.5 sync.**
   По результатам пилотного тестирования на АРМ пользователя ([@G-Ivan-A](https://github.com/G-Ivan-A))
   сформирована отдельная ветка бэклога
