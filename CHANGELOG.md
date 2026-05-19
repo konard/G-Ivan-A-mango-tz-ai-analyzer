@@ -230,6 +230,14 @@
   `docs/audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md`.
 
 ### Fixed
+- **PATCH: BL-52 / BL-56 hot-fix release 200526 (issue #186).**
+  Aligned `.env.example` `OLLAMA_MODEL` with the ARM runbook's
+  `ollama pull qwen2.5:7b` command so a copied default `.env` uses the model
+  actually installed during pilot setup. Replaced the KB indexer JSON-log
+  timestamp source with timezone-aware UTC (`datetime.now(timezone.utc)`) to
+  avoid Python 3.14 `datetime.utcnow()` deprecation warnings. Regression
+  coverage: `tests/test_env_example_runbook_sync.py` and
+  `tests/test_build_index.py`.
 - **PATCH: BL-34-F drift cleanup & audit recommendations (issue #162).**
   Clarified ADR numbering/export-channel docs, added the CONCEPT pre-deploy
   invariant for Concept/Pivot ADRs, and emitted structured

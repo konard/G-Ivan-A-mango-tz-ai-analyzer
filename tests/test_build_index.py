@@ -15,7 +15,10 @@ from __future__ import annotations
 import csv
 import hashlib
 import importlib.util
+import json
+import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -134,3 +137,30 @@ def test_build_chunk_metadata_adds_parent_fields(build_index_module) -> None:
     assert meta["parent_id"] == "doc.md::1.2::Интеграции"
     assert meta["section_id"] == meta["parent_id"]
     assert "parent_text" in meta
+
+
+def test_run_id_json_formatter_uses_timezone_aware_utc(build_index_module, monkeypatch) -> None:
+    class NoUtcNowDatetime:
+        @staticmethod
+        def now(tz=None):
+            assert tz is timezone.utc
+            return datetime(2026, 5, 20, 12, 34, 56, tzinfo=tz)
+
+    monkeypatch.setattr(build_index_module, "datetime", NoUtcNowDatetime)
+    formatter = build_index_module._RunIdJsonFormatter("run-1")
+    record = logging.LogRecord(
+        name="kb_indexer",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="indexed",
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert payload["time"] == "2026-05-20T12:34:56Z"
+    parsed = datetime.fromisoformat(payload["time"].replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == timezone.utc.utcoffset(parsed)
