@@ -1,8 +1,12 @@
-"""Tests for ``LLMClient.generate_rag_response`` (issue #73).
+"""Tests for ``LLMClient.generate_rag_response`` (issues #73 and #170).
 
-The new RAG response path must:
+The RAG response path must:
 
-- Walk the fallback chain in the order GigaChat → OpenRouter → Ollama.
+- Read the chat fallback chain from ``ui.chat_fallback_providers`` in
+  ``configs/llm_config.yaml`` (BL-42, issue #170). The legacy default
+  ``GigaChat → OpenRouter → Ollama`` order (issue #73) still applies when the
+  test passes an explicit ``ui.chat_fallback_providers`` config — production
+  uses the BL-42 chat chain ``GigaChat → Ollama``.
 - Return free text (no JSON validation, no ``response_format`` constraint).
 - Treat any exception from a provider as a non-fatal warning and fall through.
 - Raise ``LLMError`` only when every provider has failed.
@@ -24,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.llm import client as client_module  # noqa: E402
 from src.llm.client import (  # noqa: E402
+    DEFAULT_CHAT_FALLBACK_CHAIN,
     RAG_FALLBACK_CHAIN,
     LLMClient,
     LLMError,
@@ -31,13 +36,45 @@ from src.llm.client import (  # noqa: E402
 )
 
 
+_THREE_PROVIDER_CHAIN: Dict[str, Any] = {
+    "ui": {"chat_fallback_providers": ["gigachat", "openrouter", "ollama"]}
+}
+
+
 def _make_client(config: Dict[str, Any] | None = None) -> LLMClient:
     return LLMClient(llm_config=config or {})
 
 
-def test_rag_fallback_chain_order() -> None:
-    """Issue #73 mandates the GigaChat → OpenRouter → Ollama order."""
-    assert RAG_FALLBACK_CHAIN == ("gigachat", "openrouter", "ollama")
+def test_default_chat_fallback_chain_matches_bl42_contract() -> None:
+    """BL-42 (issue #170): default chat chain is GigaChat → Ollama (no DeepSeek)."""
+    assert DEFAULT_CHAT_FALLBACK_CHAIN == ("gigachat", "ollama")
+    # Backward-compat alias still exposed for legacy importers.
+    assert RAG_FALLBACK_CHAIN == DEFAULT_CHAT_FALLBACK_CHAIN
+
+
+def test_chat_fallback_chain_resolved_from_ui_config() -> None:
+    """``ui.chat_fallback_providers`` overrides the default chat chain."""
+    client = _make_client(_THREE_PROVIDER_CHAIN)
+    assert client._chat_fallback_chain() == ("gigachat", "openrouter", "ollama")
+
+
+def test_chat_fallback_chain_falls_back_to_pipeline_chain() -> None:
+    """When ``ui`` block is absent the batch chain is reused for chat."""
+    client = _make_client(
+        {"pipeline": {"fallback_providers": ["gigachat", "openrouter", "ollama"]}}
+    )
+    assert client._chat_fallback_chain() == ("gigachat", "openrouter", "ollama")
+
+
+def test_chat_fallback_chain_falls_back_to_top_level_fallback() -> None:
+    """Legacy top-level ``fallback_providers`` is honoured as last config layer."""
+    client = _make_client({"fallback_providers": ["gigachat", "ollama"]})
+    assert client._chat_fallback_chain() == ("gigachat", "ollama")
+
+
+def test_chat_fallback_chain_uses_default_when_config_empty() -> None:
+    """Without any chain config the BL-42 default kicks in."""
+    assert _make_client()._chat_fallback_chain() == DEFAULT_CHAT_FALLBACK_CHAIN
 
 
 def test_generate_rag_response_first_provider_returns_text(monkeypatch) -> None:
@@ -59,7 +96,7 @@ def test_generate_rag_response_first_provider_returns_text(monkeypatch) -> None:
     monkeypatch.setattr(client_module, "_call_openrouter_rag", openrouter_fail)
     monkeypatch.setattr(client_module, "_call_ollama_rag", ollama_fail)
 
-    answer = _make_client().generate_rag_response("sys", "вопрос")
+    answer = _make_client(_THREE_PROVIDER_CHAIN).generate_rag_response("sys", "вопрос")
     assert answer == "Привет, это ответ от GigaChat."
     assert calls == ["gigachat"]
 
@@ -83,7 +120,7 @@ def test_generate_rag_response_falls_through_to_openrouter(monkeypatch) -> None:
     monkeypatch.setattr(client_module, "_call_openrouter_rag", openrouter_ok)
     monkeypatch.setattr(client_module, "_call_ollama_rag", ollama_fail)
 
-    answer = _make_client().generate_rag_response("sys", "вопрос")
+    answer = _make_client(_THREE_PROVIDER_CHAIN).generate_rag_response("sys", "вопрос")
     assert answer == "OpenRouter answer"
     assert calls == ["gigachat", "openrouter"]
 
@@ -107,7 +144,7 @@ def test_generate_rag_response_falls_through_to_ollama(monkeypatch) -> None:
     monkeypatch.setattr(client_module, "_call_openrouter_rag", openrouter_fail)
     monkeypatch.setattr(client_module, "_call_ollama_rag", ollama_ok)
 
-    answer = _make_client().generate_rag_response("sys", "вопрос")
+    answer = _make_client(_THREE_PROVIDER_CHAIN).generate_rag_response("sys", "вопрос")
     assert answer == "Local Ollama answer"
     assert calls == ["gigachat", "openrouter", "ollama"]
 
@@ -124,7 +161,7 @@ def test_generate_rag_response_raises_when_all_fail(monkeypatch) -> None:
     monkeypatch.setattr(client_module, "_call_ollama_rag", fail_with("ollama"))
 
     with pytest.raises(LLMError, match="All RAG providers failed"):
-        _make_client().generate_rag_response("sys", "вопрос")
+        _make_client(_THREE_PROVIDER_CHAIN).generate_rag_response("sys", "вопрос")
 
 
 def test_generate_rag_response_passes_provider_config(monkeypatch) -> None:
@@ -224,15 +261,33 @@ def test_call_openrouter_rag_raises_retriable_error_on_429(monkeypatch) -> None:
             _call_openrouter_rag("sys", "user", {"model": "test/model:free"})
 
 
-def test_openrouter_priority_in_config() -> None:
-    """Issue #89 DoD: OpenRouter must be priority=1 in llm_config.yaml."""
+def test_pipeline_fallback_chain_in_config() -> None:
+    """BL-42 (issue #170, supersedes #89): GigaChat is the batch primary.
+
+    The contractual batch chain in ``configs/llm_config.yaml`` is
+    ``gigachat → openrouter → ollama`` and ``deepseek`` must be excluded
+    (paid-only during the Pilot).
+    """
     import yaml
     from pathlib import Path
 
     config_path = Path(__file__).resolve().parents[1] / "configs" / "llm_config.yaml"
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    openrouter_priority = config["providers"]["openrouter"]["priority"]
-    assert openrouter_priority == 1, f"Expected openrouter priority=1, got {openrouter_priority}"
+    pipeline_chain = (config.get("pipeline") or {}).get("fallback_providers")
+    assert pipeline_chain == ["gigachat", "openrouter", "ollama"], (
+        f"Expected BL-42 batch chain, got {pipeline_chain}"
+    )
+    chat_chain = (config.get("ui") or {}).get("chat_fallback_providers")
+    assert chat_chain == ["gigachat", "ollama"], (
+        f"Expected BL-42 chat chain, got {chat_chain}"
+    )
+    # Legacy top-level key is kept as a backward-compatible mirror.
+    assert config.get("fallback_providers") == ["gigachat", "openrouter", "ollama"]
+    # DeepSeek must remain defined (provider config kept) but excluded from the
+    # active chain.
+    assert "deepseek" in config["providers"], "deepseek provider config must be retained"
+    assert "deepseek" not in pipeline_chain
+    assert "deepseek" not in chat_chain
 
 
 def test_openrouter_has_free_fallback_models() -> None:

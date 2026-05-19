@@ -10,7 +10,7 @@
 > — для соседнего.
 
 ## Status
-Accepted (2026-05-17; reaffirmed 2026-05-19 by BL-40 ADR-sync — см. §History v1.1)
+Accepted (2026-05-17; reaffirmed 2026-05-19 by BL-40 ADR-sync — см. §History v1.1; chat fallback chain synced by BL-42 — см. §History v1.2)
 
 ## Context
 
@@ -110,11 +110,23 @@ provider-agnostic.
 # configs/llm_config.yaml
 ui:
   max_history_messages: 6
+  # BL-42 (issue #170): contractual fallback chain for "Консультация" chat
+  # mode. Read by LLMClient.generate_rag_response via _chat_fallback_chain().
+  # DeepSeek is intentionally absent (paid-only, deprecated for Pilot).
+  chat_fallback_providers:
+    - "gigachat"
+    - "ollama"
 ```
 
 The Python helper `get_max_history_messages()` clamps invalid values to a
 non-negative integer and falls back to the default (`6`) when the key is
 missing or malformed.
+
+The chat fallback chain is resolved by `LLMClient._chat_fallback_chain()` in
+the following order: `ui.chat_fallback_providers` → `pipeline.fallback_providers`
+→ top-level `fallback_providers` → built-in default
+(`DEFAULT_CHAT_FALLBACK_CHAIN = ("gigachat", "ollama")`). No hardcoded chain
+is left in `src/llm/client.py` (Pre-deploy Invariant #5).
 
 ## Triggers for Revision
 - Pilot feedback shows `max_history_messages: 6` is too low for productive
@@ -137,3 +149,4 @@ missing or malformed.
 |--------|------|-----------|
 | 1.0 | 2026-05-17 | Первая редакция: фиксация двух режимов UI (Анализ ТЗ — stateless, Консультация — stateful с историей ≤ 6 сообщений), кнопка очистки, сброс при смене режима, логирование оценки токенов (issue #93, BL-07). |
 | 1.1 | 2026-05-19 | BL-40 (issue [#166](https://github.com/G-Ivan-A/clarify-engine-ai/issues/166)): ADR-sync. Добавлен явный «Numbering Note (004B — UI Operation Modes)» со ссылкой на [`docs/ADR/README.md`](README.md) и кодировкой ADR-004A/004B. Контракт `ui.max_history_messages: 6` и `_ensure_mode_state` подтверждены без изменений; код и тесты не модифицируются. |
+| 1.2 | 2026-05-19 | BL-42 (issue [#170](https://github.com/G-Ivan-A/clarify-engine-ai/issues/170)): синхронизация fallback-цепочки чата с production-реальностью Пилота. В §Configuration зафиксирован новый ключ `ui.chat_fallback_providers: ["gigachat", "ollama"]` и резолвер `LLMClient._chat_fallback_chain()`. DeepSeek исключён из чата (paid-only, deprecated for Pilot). Контракт `ui.max_history_messages: 6` без изменений. |

@@ -1,8 +1,13 @@
 # LLM provider configuration for the Clarify Engine RAG pipeline.
 # Synchronised with docs/standards/embedding-model.md v1.1 and
 # docs/audit/data-masking_v1.md v1.2 (BL-04, BL-22, BL-23 — issue #87).
-# Updated for MVP/Pilot: OpenRouter priority=1 (free tier), GigaChat priority=2,
-# DeepSeek priority=3. Data-residency relaxed to masking+test-mode (issue #89).
+# BL-42 (issue #170): production fallback chains synced to reality.
+#   * Batch ("Анализ ТЗ"):  gigachat → openrouter → ollama
+#     GigaChat is the RU-resident primary (NFR-04, ADR-001).
+#   * Chat  ("Консультация"): gigachat → ollama
+#     DeepSeek is excluded from the active chain — it became paid-only
+#     during the Pilot and is kept as deprecated provider config only.
+# Data-residency relaxed to masking+test-mode (issue #89).
 
 use_test_data_mode: true
 
@@ -28,8 +33,14 @@ mask_rag_context: true
 #   * "Консультация" — stateful chat with bounded history.
 # `max_history_messages` caps the number of past messages forwarded to the LLM
 # in consultation mode (3–5× token-cost guard, see CONCEPT §6.8).
+# `chat_fallback_providers` is the BL-42 contractual fallback chain for the
+# "Консультация" chat mode (used by LLMClient.generate_rag_response). DeepSeek
+# is intentionally absent: it is paid-only during the Pilot.
 ui:
   max_history_messages: 6
+  chat_fallback_providers:
+    - "gigachat"
+    - "ollama"
 
 # --- Multi-hop retrieval (BL-11, issue #123) ---------------------------------
 # Global opt-in is disabled by default. src/ui/app.py hard-locks this feature
@@ -40,9 +51,33 @@ rag:
   max_hops: 2
   min_confidence_to_stop: 0.8
 
+# --- Pipeline fallback chain (BL-42, issue #170) ------------------------------
+# Contractual fallback chain for the batch "Анализ ТЗ" pipeline
+# (src/pipeline.py via LLMClient._ordered_providers). GigaChat is primary as
+# the RU-resident provider (NFR-04, ADR-001 §Decision). DeepSeek is removed
+# from the active chain — it became paid-only during the Pilot.
+pipeline:
+  fallback_providers:
+    - "gigachat"
+    - "openrouter"
+    - "ollama"
+
 providers:
-  openrouter:
+  # NOTE: GigaChat is the BL-42 primary in `pipeline.fallback_providers`. The
+  # legacy `priority` keys below are retained for backward compatibility with
+  # tooling that introspects provider metadata; they are NOT used to derive
+  # the active fallback chain when `pipeline.fallback_providers` is set.
+  gigachat:
     priority: 1
+    model: "GigaChat-Pro"
+    credentials_env: "GIGACHAT_AUTH"
+    allowed_for_production: true
+    timeout: "${PROVIDER_TIMEOUT:30}"
+    retry_attempts: 3
+    verify_ssl: false  # for corporate proxies (test)
+
+  openrouter:
+    priority: 2
     model: "qwen/qwen2.5-72b-instruct:free"
     api_key_env: "OPENROUTER_API_KEY"
     allowed_for_production: false  # free tier for MVP tests only
@@ -54,26 +89,9 @@ providers:
       - "google/gemini-2.0-flash-exp:free"
       - "openrouter/free"  # final auto-router
 
-  gigachat:
-    priority: 2
-    model: "GigaChat-Pro"
-    credentials_env: "GIGACHAT_AUTH"
-    allowed_for_production: true
-    timeout: "${PROVIDER_TIMEOUT:30}"
-    retry_attempts: 3
-    verify_ssl: false  # for corporate proxies (test)
-
-  deepseek:
-    priority: 3
-    model: "deepseek-chat"
-    api_key_env: "DEEPSEEK_API_KEY"
-    allowed_for_production: true  # paid final reserve
-    timeout: "${PROVIDER_TIMEOUT:30}"
-    retry_attempts: 3
-
   ollama:
     enabled: true
-    priority: 4
+    priority: 3
     model: "${OLLAMA_MODEL:qwen2.5:7b-instruct-q4_K_M}"
     base_url: "${OLLAMA_BASE_URL:http://localhost:11434}"
     timeout_seconds: "${OLLAMA_TIMEOUT:180}"
@@ -84,8 +102,22 @@ providers:
       keep_alive: "10m"
       temperature: 0.1
 
+  # Deprecated for Pilot: deepseek (paid-only). Kept in `providers:` so the
+  # integration code (`_call_deepseek` in src/llm/client.py) remains wired,
+  # but excluded from both `pipeline.fallback_providers` and
+  # `ui.chat_fallback_providers`. Re-enable only with explicit budget approval.
+  deepseek:
+    priority: 99
+    model: "deepseek-chat"
+    api_key_env: "DEEPSEEK_API_KEY"
+    allowed_for_production: false  # paid-only, deprecated for Pilot (BL-42)
+    timeout: "${PROVIDER_TIMEOUT:30}"
+    retry_attempts: 3
+
+# Top-level `fallback_providers` is a backward-compatibility mirror of
+# `pipeline.fallback_providers` (read by LLMClient._ordered_providers when the
+# nested key is absent). Keep both keys in sync.
 fallback_providers:
-  - "openrouter"
   - "gigachat"
-  - "deepseek"
+  - "openrouter"
   - "ollama"

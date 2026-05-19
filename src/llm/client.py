@@ -77,9 +77,16 @@ STRICT_MODE_RECOMMENDATIONS = (
     "соответствующими источниками; после переиндексации повторите запуск."
 )
 
-# Ordered fallback chain for free-text RAG generation (issue #73).
-# 1) GigaChat (OAuth2)  →  2) OpenRouter (free models)  →  3) Ollama (local)
-RAG_FALLBACK_CHAIN: tuple[str, ...] = ("gigachat", "openrouter", "ollama")
+# Default fallback chain for free-text RAG generation (issue #73, BL-42).
+# Used by `generate_rag_response` only when neither `ui.chat_fallback_providers`
+# nor the legacy top-level `fallback_providers` is set in `configs/llm_config.yaml`.
+# Production configuration drives the chain via the YAML; this constant exists
+# strictly as a last-resort default and for tests that instantiate LLMClient
+# without a config (Pre-deploy Invariant #5: no hardcoded chains in `src/`).
+DEFAULT_CHAT_FALLBACK_CHAIN: tuple[str, ...] = ("gigachat", "ollama")
+# Backward-compatible alias retained so external tests/scripts that still import
+# the old name keep working until they are migrated to the config-driven chain.
+RAG_FALLBACK_CHAIN: tuple[str, ...] = DEFAULT_CHAT_FALLBACK_CHAIN
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1:free"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
@@ -511,10 +518,29 @@ class LLMClient:
         )
 
     def _ordered_providers(self) -> List[tuple[str, Dict[str, Any]]]:
+        """Return the batch ("Анализ ТЗ") provider chain in declared order.
+
+        Resolution order (BL-42, issue #170):
+        1. `pipeline.fallback_providers` — the canonical batch chain.
+        2. Top-level `fallback_providers` — backward-compatible mirror.
+        3. Sort by per-provider ``priority`` as a last-resort default.
+
+        ``active_provider`` is honoured by moving the named provider to the
+        front of whichever chain was selected.
+        """
         providers = self.config.get("providers", {}) or {}
         active = self.config.get("active_provider")
-        ordering = self.config.get("fallback_providers")
-        if not ordering:
+        pipeline_cfg = self.config.get("pipeline")
+        ordering: Optional[List[str]] = None
+        if isinstance(pipeline_cfg, dict):
+            candidate = pipeline_cfg.get("fallback_providers")
+            if isinstance(candidate, list) and candidate:
+                ordering = list(candidate)
+        if ordering is None:
+            candidate = self.config.get("fallback_providers")
+            if isinstance(candidate, list) and candidate:
+                ordering = list(candidate)
+        if ordering is None:
             ordering = sorted(providers.keys(), key=lambda name: providers[name].get("priority", 99))
         if active and active in providers:
             ordering = [active] + [name for name in ordering if name != active]
@@ -523,6 +549,30 @@ class LLMClient:
             if name in providers:
                 result.append((name, providers[name]))
         return result
+
+    def _chat_fallback_chain(self) -> tuple[str, ...]:
+        """Return the chat ("Консультация") provider chain (BL-42).
+
+        Resolution order:
+        1. ``ui.chat_fallback_providers`` — canonical chat chain.
+        2. ``pipeline.fallback_providers`` — fall back to the batch chain.
+        3. Top-level ``fallback_providers`` — backward-compatible mirror.
+        4. :data:`DEFAULT_CHAT_FALLBACK_CHAIN` — last-resort default.
+        """
+        ui_cfg = self.config.get("ui")
+        if isinstance(ui_cfg, dict):
+            candidate = ui_cfg.get("chat_fallback_providers")
+            if isinstance(candidate, list) and candidate:
+                return tuple(str(name) for name in candidate)
+        pipeline_cfg = self.config.get("pipeline")
+        if isinstance(pipeline_cfg, dict):
+            candidate = pipeline_cfg.get("fallback_providers")
+            if isinstance(candidate, list) and candidate:
+                return tuple(str(name) for name in candidate)
+        candidate = self.config.get("fallback_providers")
+        if isinstance(candidate, list) and candidate:
+            return tuple(str(name) for name in candidate)
+        return DEFAULT_CHAT_FALLBACK_CHAIN
 
     @staticmethod
     def _effective_decoding_params(provider_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -586,15 +636,16 @@ class LLMClient:
         *,
         mask: Optional[bool] = None,
     ) -> str:
-        """Generate a free-text RAG answer with the GigaChat→OpenRouter→Ollama chain.
+        """Generate a free-text RAG answer using the configured chat chain.
 
         Unlike :meth:`classify_requirement`, this method:
 
         - Does **not** force ``response_format: json_object``; providers return
           unconstrained text suitable for the KB Q&A UI.
         - Does **not** run schema validation on the response.
-        - Uses a dedicated fallback chain (``RAG_FALLBACK_CHAIN``) so the
-          classification pipeline (DeepSeek→GigaChat) and the RAG pipeline can
+        - Uses a dedicated fallback chain read from
+          ``ui.chat_fallback_providers`` in ``configs/llm_config.yaml`` (BL-42,
+          issue #170) so the classification pipeline and the chat pipeline can
           evolve independently.
 
         BL-04 (issue #87): when ``mask`` is left ``None`` the
@@ -622,10 +673,11 @@ class LLMClient:
             "ollama": _call_ollama_rag,
         }
 
+        chat_chain = self._chat_fallback_chain()
         last_error: Optional[Exception] = None
         last_provider: Optional[str] = None
         prompt_fields = self._runtime_prompt_audit_fields(system_prompt)
-        for name in RAG_FALLBACK_CHAIN:
+        for name in chat_chain:
             caller = rag_callers.get(name)
             if caller is None:
                 continue
@@ -678,9 +730,9 @@ class LLMClient:
                 )
                 continue
 
+        chain_repr = " → ".join(chat_chain) if chat_chain else "(empty)"
         raise LLMError(
-            "All RAG providers failed (GigaChat → OpenRouter → Ollama). "
-            f"Last error: {last_error}",
+            f"All RAG providers failed ({chain_repr}). Last error: {last_error}",
             provider=last_provider,
             last_error=last_error,
         )
@@ -884,7 +936,7 @@ def _call_stub(system_prompt: str, user_message: str, config: Dict[str, Any]) ->
         ),
         "citations": [],
         "requires_ba_review": True,
-        "recommendations": "Настройте API-ключи провайдеров (DeepSeek, GigaChat).",
+        "recommendations": "Настройте API-ключи провайдеров (GigaChat, OpenRouter, Ollama).",
     }
     return json.dumps(payload, ensure_ascii=False)
 

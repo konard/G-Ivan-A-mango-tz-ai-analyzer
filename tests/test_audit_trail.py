@@ -132,10 +132,14 @@ def test_rag_audit_trail_masks_prompt_and_preserves_run_id_on_fallback(
 
     client = LLMClient(
         llm_config={
+            # BL-42 (issue #170): the production chat chain is GigaChat → Ollama;
+            # this test pins an explicit ``ui.chat_fallback_providers`` so the
+            # legacy gigachat → openrouter fallback path stays exercised.
+            "ui": {"chat_fallback_providers": ["gigachat", "openrouter"]},
             "providers": {
                 "gigachat": {"priority": 1, "retry_attempts": 1},
                 "openrouter": {"priority": 2, "retry_attempts": 1},
-            }
+            },
         }
     )
 

@@ -1,9 +1,9 @@
 # 📘 Концепция внедрения ИИ-анализатора тендерных ТЗ (MVP)
 
-**Версия:** 2.5 | **Дата:** 2026-05-19 | **Статус:** Approved for MVP / Pilot
+**Версия:** 2.6 | **Дата:** 2026-05-19 | **Статус:** Approved for MVP / Pilot
 **Владелец документа:** Product Owner — Ivan Gulienko ([@G-Ivan-A](https://github.com/G-Ivan-A))
 **Тип документа:** Single Source of Truth (SSoT)
-**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1), [issue #77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77) (v2.2), [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79) (v2.3), [issue #123](https://github.com/G-Ivan-A/clarify-engine-ai/issues/123) (v2.5 multi-hop), [issue #101](https://github.com/G-Ivan-A/clarify-engine-ai/issues/101) (v2.4 decoding-lock), [issue #164](https://github.com/G-Ivan-A/clarify-engine-ai/issues/164) (v2.5 BL-39 SSoT sync)
+**Связанные задачи:** [issue #37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37) (v2.0), [issue #43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43) (v2.1), [issue #77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77) (v2.2), [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79) (v2.3), [issue #123](https://github.com/G-Ivan-A/clarify-engine-ai/issues/123) (v2.5 multi-hop), [issue #101](https://github.com/G-Ivan-A/clarify-engine-ai/issues/101) (v2.4 decoding-lock), [issue #164](https://github.com/G-Ivan-A/clarify-engine-ai/issues/164) (v2.5 BL-39 SSoT sync), [issue #170](https://github.com/G-Ivan-A/clarify-engine-ai/issues/170) (v2.6 BL-42 LLM fallback chains)
 
 > Документ соответствует стандартам ISO/IEC 29148 (требования), ISO/IEC 42001 (управление ИИ), ISO/IEC 23894 (риски ИИ), NIST AI RMF и BABOK v3. Изменения вносятся через Pull Request с обязательным согласованием Product Owner.
 
@@ -75,7 +75,7 @@
 - В корпус знаний попадает только **публичная документация** целевой платформы (`product_docs`) и **внутренний перечень функциональности** (`internal_kb`).
 - **Маскирование чувствительных данных** (email, телефоны РФ, IP, внутренние домены) обязательно перед отправкой в любой внешний LLM-API.
 - Финальное утверждение решения остаётся за БА — система работает в режиме *human-in-the-loop*, ИИ-вердикт является **рекомендательным**.
-- Зарубежные LLM-API (DeepSeek) допускаются **только** при включённом флаге `use_test_data_mode: true` и после маскирования.
+- Зарубежные LLM-API (OpenRouter free tier; DeepSeek — deprecated for Pilot, paid-only) допускаются **только** при включённом флаге `use_test_data_mode: true` и после маскирования.
 - **Human-in-the-Loop UX (MVP):** `Read-only review` экспортированного файла. БА получает результат с колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и проверяет строки с пометкой `requires_ba_review` или `[Статус: Ошибка]` вне приложения (Excel / LibreOffice). **Inline-редактирование и save-back в систему — отложено до этапа Пилот** (см. раздел 8.1.2).
 - **Source of Truth для KB (MVP):** документы базы знаний загружаются **вручную** через Git или облачное хранилище в каталог `knowledge_base/sources/`. **Автоматическая синхронизация с SharePoint / общим диском — отложена до этапа Пилот** (см. раздел 8.1.2).
 - **Поддержка `.docx`-входа и multi-format export (MVP, scope shift v2.3 по [issue #79](https://github.com/G-Ivan-A/clarify-engine-ai/issues/79)):** входные ТЗ принимаются в форматах `.xlsx` **и** `.docx`; экспорт результата возможен в `xlsx` / `docx` / `md` с выбором режима `create_new` (default) или `append_to_original` (вне production-конфига). Legacy-формат `.doc` (binary MS Word 97–2003) — **Out-of-Scope MVP**, требуется внешняя конвертация в `.docx`. Контракт 4 MVP-колонок FR-06 сохраняется во всех форматах вывода через единую схему разметки — см. [`docs/standards/export-markup.md`](standards/export-markup.md).
@@ -224,7 +224,7 @@
 | **NFR-09** | Безопасность загрузки | Лимит размера файла UI ≤ 10 МБ, лимит количества требований ≤ N | `st.set_option("server.maxUploadSize", 10)`, валидация в `src/app.py` | `src/app.py` |
 | **NFR-10** | Prompt drift control | 100 % LLM-вызовов классификации логируют `prompt_name`, `prompt_version`, `prompt_sha256`; любое изменение SHA-256 промпта без bump версии (`<name>_v<MAJOR>.<MINOR>.<ext>`) — fail в CI; `decoding_lock applied` зафиксирован в audit-логе на каждом вызове. | `src/llm/prompt_loader.py::compute_sha256` + `_emit_load_log`; `LLMClient._merge_decoding`; регрессионные тесты `tests/test_prompt_loader.py`, `tests/test_decoding_lock.py`; `prompts/prompt_changelog.md` синхронизирован с файлами в `prompts/`. | BL-22, BL-23, ADR-004 Prompt Management, [`docs/standards/llm-behavior.md`](standards/llm-behavior.md) |
 
-> **Примечание (MVP/Пилот, issue #89):** Для этапов MVP и Пилота допускается использование зарубежных LLM-API (OpenRouter) в режиме `use_test_data_mode: true` при условии обязательного маскирования чувствительных данных (BL-04, BL-23). Приоритет провайдеров на MVP: OpenRouter (free tier, `allowed_for_production: false`) → GigaChat → DeepSeek. Возврат к 100% RU-резидентности — критерий перехода в Production (NFR-04).
+> **Примечание (MVP/Пилот, issue #89, BL-42 issue #170):** Для этапов MVP и Пилота допускается использование зарубежных LLM-API (OpenRouter) в режиме `use_test_data_mode: true` при условии обязательного маскирования чувствительных данных (BL-04, BL-23). Контрактная цепочка batch-режима зафиксирована BL-42: **GigaChat (RU-primary) → OpenRouter (free tier, `allowed_for_production: false`) → Ollama (offline-резерв)**. Цепочка чата «Консультация» — **GigaChat → Ollama**. DeepSeek deprecated for Pilot (paid-only) и исключён из обеих активных цепочек, но сохранён в `providers:` для возврата по согласованию бюджета. Возврат к 100% RU-резидентности (`use_test_data_mode: false`) — критерий перехода в Production (NFR-04).
 
 **Параметры обработки данных** (зафиксированы как стандарты, см. [`docs/standards/embedding-model.md`](standards/embedding-model.md)):
 - Чанкинг: 512 токенов, overlap 64, guardrails `[384, 768]`; значение 512 выбрано как sweet spot для секционной структуры SaaS-мануалов MANGO OFFICE и `bge-m3`.
@@ -247,7 +247,7 @@
 6. **IterativeRetriever** (`src/rag/retriever.py::IterativeRetriever`) — bounded multi-hop поверх hybrid retriever с reflection-промптом `prompts/system_rag_reflection_v1.0.md` и строгим JSON `{sufficient, follow_up, confidence}`; `rag.multi_hop_enabled`, `rag.max_hops`, `rag.min_confidence_to_stop`. Жёстко ограничен режимом «💬 Консультация» (BL-11).
 7. **QueryExpansionRetriever** (`src/rag/query_expansion.py::QueryExpansionRetriever`) — генерирует 3–4 семантические переформулировки запроса через `prompts/system_rag_query_expansion_v1.md`, объединяет хиты через RRF. `rag.query_expansion_enabled: false` по умолчанию (BL-12).
 8. **Маскер** (`src/llm/masking.py`: `mask_text`, `mask_context_chunks`, `Masker`, `sanitize_log_record`) — regex-замена чувствительных данных в тексте требования и RAG-контексте, маскирование log records до записи (FR-05).
-9. **LLM-классификатор** (`src/llm/client.py::LLMClient`) — fallback-цепочка провайдеров (DeepSeek → GigaChat → stub) со строгим JSON-выводом, `decoding:`-lock и dual `run_id` (FR-04).
+9. **LLM-классификатор** (`src/llm/client.py::LLMClient`) — fallback-цепочка провайдеров (GigaChat → OpenRouter → Ollama → stub, BL-42) со строгим JSON-выводом, `decoding:`-lock и dual `run_id` (FR-04).
 10. **PromptLoader** (`src/llm/prompt_loader.py::load_prompt_from_path`, `compute_sha256`, `_emit_load_log`) — централизованная загрузка промптов по конвенции `<name>_v<MAJOR>.<MINOR>.<ext>` с SHA-256-трассировкой (BL-08, BL-23, ADR-004 Prompt Management; см. §6.5).
 11. **Валидатор** (`src/llm/validator.py`) — извлечение и валидация JSON-ответа по Pydantic-схеме (FR-04).
 12. **ExportRouter** (`src/exporters/__init__.py::ExportRouter`) — единая точка маршрутизации pipeline-экспорта по расширению (`.xlsx` / `.docx` / `.md`); жёсткий запрет `append_to_original` в production. Контракт v1.0 определён в `src/exporters/contract.py` (`EXPORT_SCHEMA_VERSION`, `REQUIRED_COLUMN_IDS`, `EXPORT_STATUS_VALUES`) (FR-06, ADR-002, BL-27..BL-29).
@@ -267,7 +267,7 @@
    → FR-03 Гибридный поиск (BM25 + Dense + RRF, top-3)
        └─ HARD-LOCK: use_parent_context=false, multi_hop=ignored, query_expansion=ignored
    → FR-05 Маскирование (RAG-контекст)
-   → FR-04 LLM-классификация (DeepSeek → GigaChat)
+   → FR-04 LLM-классификация (GigaChat → OpenRouter → Ollama, BL-42)
        ├─ LLM_REQUEST / LLM_RESPONSE (LLM run_id = uuid4.hex[:12])
        └─ при сбое: backoff 5с → 15с → 45с, затем fallback на след. провайдера (раздел 6.7)
    → FR-04 Валидация JSON (Pydantic ExportRow)
@@ -295,7 +295,7 @@
        │         graceful fallback к накопленному контексту при timeout/invalid JSON
        └─ ParentAwareRetriever (use_parent_context=true, parent_context_max_chars=6000, BL-10)
    → FR-05 Маскирование (RAG-контекст)
-   → FR-04 LLM (generate_rag_response, DeepSeek → GigaChat → Ollama)
+   → FR-04 LLM (generate_rag_response, GigaChat → Ollama, BL-42)
        ├─ ui_prompt_built mode=consultation history_messages=… approx_tokens=…
        ├─ LLM_REQUEST / LLM_RESPONSE
        └─ при сбое: ui_generation_failed (mask_text traceback)
@@ -312,13 +312,32 @@
 > Подробный механизм повторов, fallback и пометки строк `[Статус: Ошибка]` без прерывания пайплайна — см. **раздел 6.7 «Обработка ошибок LLM»**.
 
 ### 6.4. LLM fallback-цепочка
+
+Контрактные цепочки (BL-42, issue #170) синхронизированы с production-реальностью пилота:
+
+**Ветка «📊 Анализ ТЗ» (batch, `pipeline.fallback_providers`):**
+
 | Приоритет | Провайдер | Резидентность | Допуск в Production |
 |-----------|-----------|---------------|----------------------|
-| 1 | DeepSeek | Зарубежная | Только `use_test_data_mode: true` |
-| 2 | GigaChat | РФ | ✅ |
+| 1 | GigaChat | РФ | ✅ (NFR-04, основной резидентный провайдер) |
+| 2 | OpenRouter | Зарубежная | Только `use_test_data_mode: true` (free tier) |
+| 3 | Ollama | Локальная | ✅ (offline-резерв) |
 | Fallback | Stub | — | Только для offline-тестов |
 
-> **2026-05 (issue #64):** Qwen (DashScope) и YandexGPT исключены из цепочки. MVP-провайдеры: DeepSeek (основной, free tier) + GigaChat (RU-резидентный fallback).
+**Ветка «💬 Консультация» (chat, `ui.chat_fallback_providers`):**
+
+| Приоритет | Провайдер | Резидентность | Допуск в Production |
+|-----------|-----------|---------------|----------------------|
+| 1 | GigaChat | РФ | ✅ (основной резидентный провайдер) |
+| 2 | Ollama | Локальная | ✅ (offline-резерв) |
+
+> **2026-05 (BL-42, issue #170):** GigaChat зафиксирован как RU-резидентный
+> primary в обеих ветках. DeepSeek **исключён** из активной цепочки на время
+> Пилота — провайдер перешёл на платный тариф и не обеспечивает MVP-бюджет
+> (комментарий `# Deprecated for Pilot (paid-only)` в `configs/llm_config.yaml`).
+> Код интеграции (`_call_deepseek` в `src/llm/client.py`) сохранён для быстрого
+> возврата по согласованию бюджета. Qwen (DashScope) и YandexGPT исключены
+> ранее в issue #64.
 
 Подробности — в [`docs/ADR/001-rag-architecture.md`](ADR/001-rag-architecture.md) (раздел Decision) и `configs/llm_config.yaml`.
 
@@ -638,6 +657,7 @@ orchestration или canonical cache, требуют отдельного ADR-а
 | 2.0 | 2026-05-15 | Code Agent (по issue [#37](https://github.com/G-Ivan-A/clarify-engine-ai/issues/37)) | Развёрнутая версия SSoT: согласованная структура документации (раздел 3), детализированные FR-01..FR-08 с критериями приёмки (раздел 4), полный набор НФТ NFR-01..NFR-09 (раздел 5), архитектура с ссылкой на ADR-001 (раздел 6), расширенная матрица рисков R-01..R-09 (раздел 7), Exit Criteria для MVP / Пилота / Масштабирования (раздел 8), глоссарий, открытые вопросы, реестр связанных документов. |
 | 2.1 | 2026-05-15 | Code Agent (по issue [#43](https://github.com/G-Ivan-A/clarify-engine-ai/issues/43)) | Финализация scope MVP: (1) FR-06 — минимальный набор экспортируемых колонок `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]` и пояснение порогов Confidence; расширенная схема вынесена в ADR-002 пост-пилот; (2) FR-07 — вкладка «Концепция и БЗ» заменена на «Справка для БА»; убран динамический рендеринг `CONCEPT.md`; добавлены счётчик `Успешно / Ошибки` и кнопка «Повторить только ошибки»; (3) новый раздел 6.7 — обработка ошибок LLM (экспоненциальный backoff `5с → 15с → 45с`, fallback по цепочке, статус `[Ошибка]`, продолжение пайплайна без аварийного останова, полная трассировка по `RunID`); (4) раздел 2.3 — зафиксирован HiL UX MVP = `read-only review` и KB Source MVP = ручная загрузка Git/Cloud; (5) раздел 10 — закрыты все 7 открытых вопросов с обоснованиями и ссылками. |
 | 2.2 | 2026-05-17 | Code Agent (по issue [#77](https://github.com/G-Ivan-A/clarify-engine-ai/issues/77)) | Раздел 8.1.2 расширен подразделом «Стратегический вектор Pilot → Enterprise» со ссылкой на [ADR-003 (Concept)](ADR/003-multi-agent-orchestration-draft.md) и триггерами перехода к мультиагентной схеме (F1 ≥ 0.85, цитируемость ≥ 95 %, веб-шлюз, утверждение PO). В разделе 11 «Связанные документы» добавлены ADR-003, RAG_OPTIMIZATION_ANALYSIS.md и новый каталог `docs/backlog/` с бэклогом v1 (Draft → Review). Кодовых изменений нет; модификации `configs/`, `src/` и параметров чанкинга не выполняются до статуса бэклога `Accepted`. |
+| 2.6 | 2026-05-19 | Code Agent (по issue [#170](https://github.com/G-Ivan-A/clarify-engine-ai/issues/170)) | **BL-42 — Sync LLM fallback chains with production reality.** (1) §2.3 — допуск зарубежных LLM-API расширен: DeepSeek помечен как deprecated for Pilot (paid-only). (2) §5 примечание MVP/Pilot — зафиксированы контрактные цепочки BL-42: batch `GigaChat → OpenRouter → Ollama`, chat `GigaChat → Ollama`. (3) §6.2 п.9 — fallback-цепочка классификатора `GigaChat → OpenRouter → Ollama → stub`. (4) §6.3.1 — ветка «Анализ ТЗ» переписана: `GigaChat → OpenRouter → Ollama (BL-42)`. (5) §6.3.2 — ветка «Консультация»: `generate_rag_response, GigaChat → Ollama (BL-42)`. (6) §6.4 переписан полностью: две таблицы (batch/chat) + сноска о deprecation DeepSeek и причине (paid-only). (7) Кодовая часть BL-42: вынесен hardcoded `RAG_FALLBACK_CHAIN` из `src/llm/client.py` в config (`ui.chat_fallback_providers`, `pipeline.fallback_providers`), `_chat_fallback_chain()` читает чейн из YAML; ADR-001 и ADR-004 (UI Operation Modes) синхронизированы. |
 | 2.5 | 2026-05-19 | Code Agent (по issue [#164](https://github.com/G-Ivan-A/clarify-engine-ai/issues/164)) | **BL-39 — SSoT sync v2.5 (Scope expansion, stabilization & SSoT sync).** Документационная синхронизация CONCEPT.md с принятыми ADR-004 (UI Operation Modes), ADR-007 (Error Handling), ADR-008 (Data Export), ADR-009 (Parent Document Retrieval) и [BL-34 audit](audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md). (1) Шапка обновлена до v2.5 со ссылками на issues #123, #101, #164. (2) §1.1 — dual-scope формулировка: batch-классификация + интерактивная консультация + multi-format export. (3) §2.1 — фиксация двух режимов работы UI («📊 Анализ ТЗ» stateless / «💬 Консультация» stateful, `ui.max_history_messages = 6`). (4) §2.3 — новый блок «Pre-deploy Invariants (BL-34, v2.5)» с шестью инвариантами (strict_embedder, zero source modification, ADR-003/007 boundary, PoC location, decoding-lock central, masking-rules single source). (5) §4 FR-06/07/08 переписаны: pipeline vs UI export channels (`EXPORT_SCHEMA_VERSION = "1.0"`, 7 полей), sidebar-radio режимы, dual `run_id` (pipeline UUID4 + LLM `uuid4.hex[:12]`), события `PIPELINE_START/END`, `LLM_REQUEST/RESPONSE`, `ui_generation_failed`. (6) §5 — NFR-03 (latency консультации ≤ 8 с p95), NFR-06 (dual run_id), NFR-08 (graceful degradation + retry UX), новый NFR-10 (prompt drift control: SHA-256 + `decoding_lock applied`). (7) §6.2 — компонентный реестр расширен с 10 до 15 модулей (`ParentAwareRetriever`, `IterativeRetriever`, `QueryExpansionRetriever`, `PromptLoader`, `ExportRouter`, `ErrorHandler`). (8) §6.3 — split на §6.3.1 («Анализ ТЗ», HARD-LOCK one-shot) и §6.3.2 («Консультация», opt-in QueryExpansion / Iterative / ParentAware). (9) §6.6 — конкретные значения по configs (chunk_size 512/64, top_k, rrf_k=60, strict_rag_mode, parent_context_max_chars и др.) со ссылками на BL-22, BL-26. (10) §7 — новые риски R-10 (Prompt drift), R-11 (Streamlit state corruption), R-12 (Cache/Pivot misuse). (11) §8.1.1 — Gate 0 «Stability ≥ 5 сессий» и Pre-deploy invariant check. (12) §10 — добавлены вопросы 8 «Триггер валидации кэша (BL-33)» и 9 «Timeline Production UI Gateway». (13) §11 — добавлены ADR-004 (prompt + UI), ADR-005, ADR-006, ADR-007 (canonical-cache + error-handling), ADR-008, ADR-009 и BL-34 audit. Кодовых изменений нет; модификации `src/`, `configs/`, контрактов и тестов не выполняются. |
 | 2.5 | 2026-05-18 | Code Agent (по issue [#123](https://github.com/G-Ivan-A/clarify-engine-ai/issues/123)) | **BL-11 — Multi-hop Retrieval для режима «Консультация».** §6.3 фиксирует глобальный флаг `rag.multi_hop_enabled: false`, hard-lock в режиме «Анализ ТЗ», лимит `rag.max_hops`, reflection-промпт `prompts/system_rag_reflection_v1.0.md`, строгий JSON-контракт и graceful degradation при timeout/network/invalid JSON. |
 | 2.4 | 2026-05-17 | Code Agent (по issue [#101](https://github.com/G-Ivan-A/clarify-engine-ai/issues/101)) | **BL-22 — централизованный Decoding Config + аудит-логирование параметров LLM.** (1) Создан стандарт [`docs/standards/llm-behavior.md`](standards/llm-behavior.md) v1.0 с каноническим блоком `decoding:` (`temperature: 0.1`, `top_p: 0.9`, `seed: 42`, `max_tokens: 1024`), таблицей рекомендуемых значений по провайдерам/режимам (DeepSeek, GigaChat, OpenRouter, Ollama) и допустимым коридором изменений в Пилоте. (2) §4 FR-04 — в столбец «Артефакты» добавлена ссылка на блок `decoding:` и новый стандарт. (3) §4 FR-08 — описание расширено: лог `decoding_lock applied` фиксирует применённые параметры на каждом классификационном вызове (NFR-06). (4) §11 — стандарт добавлен в реестр связанных документов. Кодовая часть BL-22 (`LLMClient._merge_decoding`, `_decoding_overrides`, регрессионные тесты `tests/test_decoding_lock.py`) была реализована ранее в рамках issue #87 и в этой версии только документируется. |

@@ -43,7 +43,7 @@ Open-source модуль для работы с требованиями и ба
 |-------------|----------|
 | 📥 **Парсинг** | Извлечение требований из `.xlsx` и `.docx` с локаторами источника. |
 | 🔎 **RAG-Поиск** | Гибридный поиск по внутренней базе знаний (ChromaDB). |
-| 🤖 **LLM-Классификация** | Fallback-цепочка (DeepSeek → GigaChat). |
+| 🤖 **LLM-Классификация** | Контрактные fallback-цепочки BL-42: batch `GigaChat → OpenRouter → Ollama`, chat `GigaChat → Ollama`. |
 | 🛡️ **Маскирование** | Regex-замена PII (email, phone, IP, domain) до отправки запроса. |
 | 📤 **Экспорт** | Возврат `.xlsx`, `.docx` или `.md` отчёта с MVP-полями `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`. |
 | 🖥️ **Streamlit UI** | Веб-интерфейс для загрузки файлов и мониторинга прогресса. |
@@ -93,10 +93,21 @@ pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cp
 ```
 
 ### 2. Настройка окружения
-Создайте файл `.env` в корне (не коммитьте его!):
+Создайте файл `.env` в корне (не коммитьте его!). Контрактные цепочки BL-42
+(`configs/llm_config.yaml::pipeline.fallback_providers` и `ui.chat_fallback_providers`):
 ```env
-DEEPSEEK_API_KEY=sk-...    # Основной провайдер MVP (free tier)
-GIGACHAT_API_KEY=...       # RU-резидентный fallback (Pilot/Production)
+# 1) GigaChat — RU-резидентный primary (NFR-04)
+GIGACHAT_CLIENT_ID=...
+GIGACHAT_CLIENT_SECRET=...
+
+# 2) OpenRouter — free tier, batch-secondary (только при use_test_data_mode=true)
+OPENROUTER_API_KEY=...
+
+# 3) Ollama — локальный offline-резерв (см. ниже)
+OLLAMA_BASE_URL=http://localhost:11434
+
+# DeepSeek — deprecated for Pilot (paid-only, BL-42 issue #170).
+# DEEPSEEK_API_KEY=
 ```
 
 ### Локальный запуск с Ollama

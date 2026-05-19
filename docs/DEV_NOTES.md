@@ -63,25 +63,30 @@ UI вызывает `ChromaRetriever.from_config(... project_root=PROJECT_ROOT)`
 
 ### 2.2. Цепочка реальных LLM-подключений
 
-В `src/llm/client.py` объявлена константа
+В `src/llm/client.py` (BL-42, issue #170) контрактная цепочка чата читается из
+конфига `configs/llm_config.yaml` (`ui.chat_fallback_providers`) через
+`LLMClient._chat_fallback_chain()` — никакого hardcoded `RAG_FALLBACK_CHAIN`
+больше нет (Pre-deploy Invariant #5). Дефолт для тестов без конфига:
 
 ```python
-RAG_FALLBACK_CHAIN = ("gigachat", "openrouter", "ollama")
+DEFAULT_CHAT_FALLBACK_CHAIN = ("gigachat", "ollama")
+RAG_FALLBACK_CHAIN = DEFAULT_CHAT_FALLBACK_CHAIN  # backward-compatible alias
 ```
 
-и новый публичный метод `LLMClient.generate_rag_response(system_prompt, user_prompt)`:
+и публичный метод `LLMClient.generate_rag_response(system_prompt, user_prompt)`:
 
 ```python
 def generate_rag_response(self, system_prompt, user_prompt):
+    chat_chain = self._chat_fallback_chain()  # read from YAML
     last_error = None
-    for name in RAG_FALLBACK_CHAIN:
+    for name in chat_chain:
         caller = rag_callers[name]
         try:
             return caller(system_prompt, user_prompt, providers.get(name, {}))
         except Exception as exc:
             logger.warning("RAG provider %s failed (%s); trying next provider.", name, exc)
             last_error = exc
-    raise LLMError(f"All RAG providers failed... Last error: {last_error}")
+    raise LLMError(f"All RAG providers failed ({' → '.join(chat_chain)}). Last error: {last_error}")
 ```
 
 Метод **не** использует `response_format: json_object` и **не** валидирует

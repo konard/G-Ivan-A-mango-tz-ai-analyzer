@@ -1,7 +1,7 @@
 # ADR-001: RAG Architecture with Hybrid Search
 
 ## Status
-Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1.4; reaffirmed by BL-40 ADR-sync, v1.5).
+Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1.4; reaffirmed by BL-40 ADR-sync, v1.5; LLM fallback chain re-synced by BL-42, v1.6).
 
 ## Context
 - Требуется классификация требований ТЗ с обязательным цитированием (см. [`docs/CONCEPT.md`](../CONCEPT.md), разделы 1 и 4).
@@ -17,7 +17,10 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
    - BM25 — для точных терминов и артикулов.
    - Dense (cosine similarity) — для семантического поиска.
    - RRF (Reciprocal Rank Fusion, k = 60) — для ранжирования.
-4. **LLM Fallback Chain:** DeepSeek → GigaChat (концепция, раздел 5). MVP-цепочка упрощена в 2026-05 (issue #64): Qwen (DashScope) и YandexGPT исключены.
+4. **LLM Fallback Chain (BL-42, issue #170; синхронизировано с production-реальностью Пилота):**
+   - **Batch «📊 Анализ ТЗ» (`pipeline.fallback_providers`):** **GigaChat → OpenRouter → Ollama**. GigaChat — RU-резидентный primary (NFR-04). OpenRouter (free tier) допускается только при `use_test_data_mode: true`. Ollama — локальный offline-резерв.
+   - **Chat «💬 Консультация» (`ui.chat_fallback_providers`, читается `LLMClient.generate_rag_response`):** **GigaChat → Ollama**.
+   - **DeepSeek deprecated for Pilot (paid-only):** провайдер сохранён в `configs/llm_config.yaml::providers`, но исключён из обеих активных цепочек. Интеграционный код (`_call_deepseek` в `src/llm/client.py`) оставлен для быстрого возврата по согласованию бюджета. Qwen (DashScope) и YandexGPT исключены ранее в 2026-05 (issue #64).
 
 ## Consequences
 
@@ -46,10 +49,10 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
 
 ## Triggers for Revision
 - Падение фактической точности ниже 70% по итогам пилота (Exit Criteria MVP, раздел 7 концепции).
-- Изменение состава доступных LLM-провайдеров (например, недоступность DeepSeek или GigaChat).
+- Изменение состава доступных LLM-провайдеров (например, недоступность GigaChat или Ollama; возврат DeepSeek по согласованию бюджета).
 - Смена требований резидентности данных (например, запрет на использование зарубежных API даже в тестовом режиме).
 - Появление верифицированной российской модели эмбеддингов с качеством ≥ `bge-m3`.
-- Включение `MULTIHOP_ENABLED=true` (BL-11) либо расширение fallback-цепочки за пределы DeepSeek → GigaChat.
+- Включение `MULTIHOP_ENABLED=true` (BL-11) либо расширение fallback-цепочки за пределы зафиксированных в BL-42 контрактных цепочек (`GigaChat → OpenRouter → Ollama` для batch, `GigaChat → Ollama` для chat).
 - Любое изменение `chunk_size` / `chunk_overlap` / guardrails после принятого окна `512 / 64` и `[384, 768]` требует ревизии § Consequences, BREAKING-записи в `CHANGELOG.md` и полной переиндексации KB.
 
 ## References
@@ -68,3 +71,4 @@ Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1
 | 1.3 | 2026-05-17 | BL-02 hardening (issue #109): metadata coverage MVP-порог уточнён до `≥ 65 %`, добавлен `section_inherited` и section propagation с защитой от ghost inheritance. |
 | 1.4 | 2026-05-19 | BL-32 (issue #152): Consequences и Triggers синхронизированы с принятым окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`; изменение окна явно требует reindex KB. |
 | 1.5 | 2026-05-19 | BL-40 (issue #166): ADR-sync с `CONCEPT.md v2.5` и BL-34 audit. Добавлена ссылка на стандарт [`docs/standards/llm-behavior.md`](../standards/llm-behavior.md) в §Sprint 1 Addenda (BL-22) и в References; добавлена явная ссылка на §3 `CHK-01` BL-34 audit. Контракт `512 / 64`, `[384, 768]` и Triggers без изменений. |
+| 1.6 | 2026-05-19 | BL-42 (issue #170): LLM Fallback Chain переписан под production-реальность Пилота — batch `GigaChat → OpenRouter → Ollama`, chat `GigaChat → Ollama`. DeepSeek помечен deprecated for Pilot (paid-only) и исключён из активных цепочек, но сохранён в `providers:` для возврата по согласованию бюджета. Triggers for Revision синхронизированы с новыми контрактами. |

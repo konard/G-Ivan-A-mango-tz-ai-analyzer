@@ -10,6 +10,29 @@
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
 ### Changed
+- **CONFIG & DOCS: BL-42 sync LLM chains to production reality (GigaChat primary)
+  (issue #170).** Production fallback chains для batch- и chat-режимов
+  переписаны под реальность Пилота. `configs/llm_config.yaml` теперь содержит
+  два явных контракта: `pipeline.fallback_providers: ["gigachat", "openrouter",
+  "ollama"]` для ветки «📊 Анализ ТЗ» (GigaChat — RU-резидентный primary,
+  NFR-04) и `ui.chat_fallback_providers: ["gigachat", "ollama"]` для ветки
+  «💬 Консультация». DeepSeek помечен `# Deprecated for Pilot: deepseek
+  (paid-only)` — провайдер сохранён в `providers:` и в `_call_deepseek`
+  для быстрого возврата по согласованию бюджета, но исключён из обеих
+  активных цепочек. Код P0-фикс: вынес hardcoded `RAG_FALLBACK_CHAIN` из
+  `src/llm/client.py:82` в config — `_chat_fallback_chain()` резолвит чейн
+  в порядке `ui.chat_fallback_providers` → `pipeline.fallback_providers` →
+  top-level `fallback_providers` → `DEFAULT_CHAT_FALLBACK_CHAIN` (Pre-deploy
+  Invariant #5: zero hardcoded chains in `src/`). Алиас `RAG_FALLBACK_CHAIN`
+  сохранён для backward compatibility с импортирующими тестами/скриптами.
+  SSoT синхронизация: `CONCEPT.md` v2.6 (§2.3 deprecation note, §5 MVP/Pilot
+  примечание, §6.2 п.9, §6.3.1, §6.3.2, §6.4 — две таблицы batch/chat +
+  сноска), ADR-001 v1.6 (`Decision §4`, `Triggers for Revision`),
+  ADR-004 (UI Operation Modes) v1.2 (`Configuration` block + резолвер),
+  `.env.example` и `README.md` (контрактные цепочки + DeepSeek-deprecation
+  блок). Zero logic change в `_ordered_providers` для legacy конфигов
+  (top-level `fallback_providers` всё ещё работает как fallback).
+
 - **BL-41 — Streamlit UI refactor & UX polish (issue #168).** `src/ui/app.py`
   decomposed into single-responsibility components under
   `src/ui/components/` (`mode_selector.py`, `upload_zone.py`,

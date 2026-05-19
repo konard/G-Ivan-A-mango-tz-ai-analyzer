@@ -32,9 +32,12 @@
 - All source files are PDFs; no `.docx` or `.xlsx` artefacts present.
 
 ### `configs/llm_config.yaml`
-- Providers list contains **only** `deepseek` and `gigachat`.
+- Providers list contains `gigachat`, `openrouter`, `ollama` (active) and
+  `deepseek` (deprecated for Pilot, paid-only — BL-42 issue #170).
 - No `yandexgpt`, `qwen`, or `dashscope` references.
-- `fallback_providers` chain: `deepseek` → `gigachat`.
+- Active fallback chains (BL-42): `pipeline.fallback_providers` =
+  `gigachat → openrouter → ollama`; `ui.chat_fallback_providers` =
+  `gigachat → ollama`.
 
 ### `.env.example`
 - Contains placeholders for `DEEPSEEK_API_KEY` and `GIGACHAT_API_KEY` (value `"записать_ключ"` — placeholder only, not a secret).
