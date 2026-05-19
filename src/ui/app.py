@@ -41,6 +41,7 @@ from src.ui.components.chat_interface import (
 from src.ui.components.mode_selector import (
     DEFAULT_TOP_K,
     render_sidebar as _render_sidebar_component,
+    resolve_retrieval_settings as _resolve_retrieval_settings_impl,
 )
 from src.ui.components.results_viewer import (
     coerce_page as _coerce_page_impl,
@@ -224,6 +225,18 @@ def get_debug_error_details(ui_config: Optional[Dict[str, Any]] = None) -> bool:
     if not isinstance(ui_cfg, dict):
         return False
     return bool(ui_cfg.get("debug_error_details", False))
+
+
+def get_retrieval_settings(
+    ui_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return the BL-48.6 slider settings resolved from ``ui_config.yaml``.
+
+    Thin wrapper around the component-level resolver kept on ``src.ui.app``
+    so tests and any future caller can monkeypatch the loader in one place.
+    """
+    cfg = ui_config if ui_config is not None else load_ui_config()
+    return _resolve_retrieval_settings_impl(cfg)
 
 
 def truncate(text: str, limit: int = CHUNK_PREVIEW_CHARS) -> str:
@@ -663,11 +676,13 @@ def render_sidebar(
     retriever_info: Optional[Dict[str, str]],
     *,
     max_history_messages: int,
+    retrieval_settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return _render_sidebar_component(
         retriever_info,
         max_history_messages=max_history_messages,
         env_path=ENV_PATH,
+        retrieval_settings=retrieval_settings or get_retrieval_settings(),
     )
 
 
@@ -959,8 +974,11 @@ def main() -> None:
             exc=exc,
         )
 
+    retrieval_settings = get_retrieval_settings()
     settings = render_sidebar(
-        retriever_info, max_history_messages=max_history_messages
+        retriever_info,
+        max_history_messages=max_history_messages,
+        retrieval_settings=retrieval_settings,
     )
     _ensure_mode_state(settings["mode"])
     if settings.get("clear_history"):

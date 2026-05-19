@@ -464,6 +464,63 @@ def test_mode_constants_match_issue_spec() -> None:
     assert app.MODE_ORDER == [app.MODE_STATELESS, app.MODE_CONSULTATION]
 
 
+# ------------------------------------------------- BL-48.6 retrieval slider --
+def test_get_retrieval_settings_reads_shipped_ui_config() -> None:
+    """The orchestrator must resolve the BL-48.6 slider contract from disk."""
+    settings = app.get_retrieval_settings()
+    assert settings["top_k_min"] == 1
+    assert settings["top_k_max"] == 20
+    assert settings["top_k_default"] == 5
+    assert settings["top_k_production_max"] == 10
+    assert "чанк" not in settings["label"].lower()
+    assert "КАЖДОГО" in settings["tooltip"]
+
+
+def test_get_retrieval_settings_accepts_inline_override() -> None:
+    settings = app.get_retrieval_settings(
+        {"ui": {"retrieval": {"top_k_max": 12, "top_k_default": 6}}}
+    )
+    assert settings["top_k_max"] == 12
+    assert settings["top_k_default"] == 6
+
+
+def test_render_sidebar_forwards_retrieval_settings(monkeypatch) -> None:
+    """Slider config flows through ``app.render_sidebar`` into the component."""
+    captured: dict = {}
+
+    def _fake_component(
+        retriever_info,
+        *,
+        max_history_messages,
+        env_path,
+        retrieval_settings,
+    ):
+        captured["retrieval_settings"] = retrieval_settings
+        captured["env_path"] = env_path
+        captured["max_history_messages"] = max_history_messages
+        return {"mode": app.MODE_STATELESS, "debug": False, "top_k": 5, "clear_history": False}
+
+    monkeypatch.setattr(app, "_render_sidebar_component", _fake_component)
+
+    override = {
+        "top_k_min": 1,
+        "top_k_max": 14,
+        "top_k_default": 7,
+        "top_k_production_max": 9,
+        "label": "L",
+        "help": "H",
+        "tooltip": "T",
+        "warning_template": "⚠️ {limit}",
+    }
+    app.render_sidebar(
+        None,
+        max_history_messages=6,
+        retrieval_settings=override,
+    )
+    assert captured["retrieval_settings"] == override
+    assert captured["max_history_messages"] == 6
+
+
 def test_search_kb_wraps_parent_context_after_child_retrieval(monkeypatch) -> None:
     class _Retriever:
         collection_name = "kb"
