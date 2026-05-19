@@ -34,6 +34,8 @@ chcp 65001
 
 Файлы `.env`, `.yaml` и `.md` сохраняйте как UTF-8 без BOM. Это снижает риск `UnicodeDecodeError` на Windows с системной кодировкой cp1251.
 
+> ⚠️ **Notepad на Windows скрывает расширение.** Если «Сохранить как» не переключить в `All Files (*.*)`, файл уходит на диск как `.env.txt`. С BL-50 (issue #194) startup-guard скажет вам об этом автоматически: при старте `streamlit run src/ui/app.py` или `python -m src.pipeline` появится сообщение «Обнаружен файл .env.txt» с готовой командой `ren .env.txt .env`. Никакого silent rename — переименование подтверждаете вы сами.
+
 ## 2. Сценарий А: чистая установка
 
 Клонируйте репозиторий:
@@ -75,6 +77,8 @@ py -m pip install --no-cache-dir torch torchvision>=0.18.0 --index-url https://d
 ```cmd
 copy .env.example .env
 ```
+
+> 💡 С BL-50 (issue #194) этот шаг можно пропустить: если `.env` отсутствует, startup-guard в `streamlit run src/ui/app.py` / `python -m src.pipeline` сам скопирует `.env.example` в `.env` и оставит вам подсказку в логе. Шаг с `copy` остаётся актуальным для тех, кто хочет сразу открыть файл в редакторе и заполнить ключи.
 
 Откройте `.env` в редакторе и заполните доступные ключи. Для локального fallback оставьте или добавьте:
 
@@ -266,6 +270,8 @@ ui:
 | `Connection refused` или `Ollama is unreachable` | Не запущен daemon Ollama | Запустить отдельное окно CMD с `ollama serve` |
 | `${VAR:default}` не подставляется как ожидалось | Переменная окружения не задана в текущем окне CMD | Временно задать прямое значение через `set VAR=value` или прописать значение в `.env` |
 | `ModuleNotFoundError: src` | Не задан `PYTHONPATH` перед запуском UI | Выполнить `set PYTHONPATH=C:\Projects\clarify-engine-ai` |
+| `Обнаружен файл .env.txt` | Notepad сохранил файл как `.env.txt` вместо `.env` | Выполнить `ren .env.txt .env` (см. BL-50, issue #194); guard остановит запуск, пока имя не исправлено |
+| `В .env отсутствуют или пустые обязательные переменные` | `OLLAMA_MODEL` или `OLLAMA_BASE_URL` пустые в `.env` | Заполнить значения по образцу из `.env.example` (`qwen2.5:7b` / `http://localhost:11434`) |
 
 Для обращения к разработчику приложите скачанный файл логов, точный текст ошибки из UI, `run_id`, версию Windows и результат команд:
 
