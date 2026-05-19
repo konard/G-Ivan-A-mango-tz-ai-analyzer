@@ -60,6 +60,8 @@ mask_rag_context: true
 # Every chunk persisted in ChromaDB MUST carry the keys below. The indexer
 # (knowledge_base/indexing/build_index.py) enforces this contract; missing
 # searchable fields are counted against the ≥ 65 % MVP completeness target.
+# Minimal external contract for citations and BL-10 parent retrieval:
+# page_number, section_title, section_number, product, parent_id.
 required_metadata:
   - source
   - chunk_idx

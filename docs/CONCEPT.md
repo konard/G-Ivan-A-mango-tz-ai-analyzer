@@ -105,7 +105,7 @@
 ### FR-02. Индексация базы знаний
 | Поле | Значение |
 |------|----------|
-| **Описание** | Чтение источников из `knowledge_base/sources/`, токенайзер-чанкинг 200–300 токенов с overlap 50, векторизация моделью `BAAI/bge-m3`, сохранение в ChromaDB, обновление `knowledge_base/metadata/source_registry.csv` (поля `filename`, `version`, `sha256_hash`, `indexed_date`, `status`, `coverage`). |
+| **Описание** | Чтение источников из `knowledge_base/sources/`, токенайзер-чанкинг 512 токенов с overlap 64 и guardrails `[384, 768]`, векторизация моделью `BAAI/bge-m3`, сохранение в ChromaDB, обновление `knowledge_base/metadata/source_registry.csv` (поля `filename`, `version`, `sha256_hash`, `indexed_date`, `status`, `coverage`). |
 | **Вход** | Каталог `knowledge_base/sources/` |
 | **Выход** | Заполненный векторный индекс ChromaDB + актуальный `source_registry.csv` |
 | **Критерий приёмки** | Полная индексация ≤ 5 мин на эталонном корпусе (≤ 20 документов); SHA-256 файлов записан в реестр и совпадает при повторной проверке; поиск по тестовому запросу возвращает не менее одного релевантного чанка с непустыми метаданными `source` и `score`. |
@@ -195,7 +195,7 @@
 > **Примечание (MVP/Пилот, issue #89):** Для этапов MVP и Пилота допускается использование зарубежных LLM-API (OpenRouter) в режиме `use_test_data_mode: true` при условии обязательного маскирования чувствительных данных (BL-04, BL-23). Приоритет провайдеров на MVP: OpenRouter (free tier, `allowed_for_production: false`) → GigaChat → DeepSeek. Возврат к 100% RU-резидентности — критерий перехода в Production (NFR-04).
 
 **Параметры обработки данных** (зафиксированы как стандарты, см. [`docs/standards/embedding-model.md`](standards/embedding-model.md)):
-- Чанкинг: 200–300 токенов, overlap 50.
+- Чанкинг: 512 токенов, overlap 64, guardrails `[384, 768]`; значение 512 выбрано как sweet spot для секционной структуры SaaS-мануалов MANGO OFFICE и `bge-m3`.
 - Модель эмбеддингов: `BAAI/bge-m3` (1024 dim, multilingual, локальное исполнение).
 - Реестр источников: SHA-256 хеши, поля `filename, version, sha256_hash, indexed_date, status, coverage`.
 
@@ -208,7 +208,7 @@
 
 ### 6.2. Компоненты
 1. **Парсер** входных файлов `.xlsx` / `.docx` — извлекает атомарные требования (FR-01).
-2. **Чанкер** — разбивает документы KB на токенайзер-чанки 200–300 токенов с overlap 50 (FR-02).
+2. **Чанкер** — разбивает документы KB на токенайзер-чанки 512 токенов с overlap 64 и guardrails `[384, 768]`; 512 закрывает типичный атомарный раздел SaaS-мануалов MANGO OFFICE и остаётся sweet spot для `bge-m3` (FR-02).
 3. **Векторное хранилище** — ChromaDB (Apache 2.0, локальное развёртывание).
 4. **Гибридный retriever** — BM25 + Dense + RRF (k = 60), top-3 чанков (FR-03).
 5. **Маскер** — regex-замена чувствительных данных в тексте требования и RAG-контексте (FR-05).

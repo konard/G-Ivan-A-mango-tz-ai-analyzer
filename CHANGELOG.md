@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### ⚠️ BREAKING CHANGES
+- **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
+
 ### Fixed
 - **PATCH: Code Review triage hardening (BL-26, issue #142).**
   Added the code-review triage matrix, made `strict_embedder: true` explicit

@@ -1,7 +1,7 @@
 # ADR-001: RAG Architecture with Hybrid Search
 
 ## Status
-Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.3)
+Accepted (2026-05-12; revised 2026-05-19 for Sprint 2 BL-32 — see §History v1.4)
 
 ## Context
 - Требуется классификация требований ТЗ с обязательным цитированием (см. [`docs/CONCEPT.md`](../CONCEPT.md), разделы 1 и 4).
@@ -35,6 +35,7 @@ Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.3)
 ### Neutral
 - Модель эмбеддингов может быть заменена через конфиг без изменения кода (см. критерии замены в [`docs/standards/embedding-model.md`](../standards/embedding-model.md)).
 - Vector store также абстрагирован конфигом — допустима последующая замена ChromaDB на резидентную альтернативу при изменении требований ИБ.
+- **Chunk size tuning (BL-32).** После BL-06 production-контракт чанкинга зафиксирован как `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Изменение этих значений меняет границы чанков и требует полного reindex KB.
 
 ### Sprint 1 Addenda (BL-16a, issue #87)
 - **Metadata Enrichment (BL-02).** Каждый чанк в ChromaDB обязан содержать `page_number`, `section_title`, `section_number`, `product`, `section_inherited` в дополнение к `source` / `chunk_idx`. Контракт зафиксирован в [`docs/standards/embedding-model.md`](../standards/embedding-model.md) §5.2–5.3; schema-check выполняется при индексации и в `evaluate_rag.py` (BL-05). После issue #109 MVP-порог покрытия searchable metadata установлен на `≥ 65 %`; продуктовая цель цитируемости `≥ 95 %` остаётся целевой метрикой пилота.
@@ -49,7 +50,7 @@ Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.3)
 - Смена требований резидентности данных (например, запрет на использование зарубежных API даже в тестовом режиме).
 - Появление верифицированной российской модели эмбеддингов с качеством ≥ `bge-m3`.
 - Включение `MULTIHOP_ENABLED=true` (BL-11) либо расширение fallback-цепочки за пределы DeepSeek → GigaChat.
-- Сдвиг `chunk_size` / `chunk_overlap` с MVP-окна `250 / 50` на `512 / 64` (BL-16b) — требует ревизии § Consequences и BREAKING-записи в `CHANGELOG.md`.
+- Любое изменение `chunk_size` / `chunk_overlap` / guardrails после принятого окна `512 / 64` и `[384, 768]` требует ревизии § Consequences, BREAKING-записи в `CHANGELOG.md` и полной переиндексации KB.
 
 ## References
 - [`docs/CONCEPT.md`](../CONCEPT.md) — концепция MVP, разделы 3 (Описание решения) и 5 (Архитектура и стек).
@@ -63,3 +64,4 @@ Accepted (2026-05-12; revised 2026-05-17 for Sprint 1 P0 — see §History v1.3)
 | 1.1 | 2026-05-16 | Упрощение LLM fallback-цепочки до двух провайдеров (DeepSeek → GigaChat); исключены Qwen (DashScope) и YandexGPT (issue #64). |
 | 1.2 | 2026-05-17 | BL-16a (issue #87): добавлен раздел «Sprint 1 Addenda» (Metadata Enrichment BL-02, STRICT_MODE BL-03, Masked RAG channel BL-04, Temperature lock BL-22, Log sanitization BL-23). Triggers for Revision дополнены пунктом про переход на `chunk_size=512` (BL-16b) и расширение fallback-цепочки. |
 | 1.3 | 2026-05-17 | BL-02 hardening (issue #109): metadata coverage MVP-порог уточнён до `≥ 65 %`, добавлен `section_inherited` и section propagation с защитой от ghost inheritance. |
+| 1.4 | 2026-05-19 | BL-32 (issue #152): Consequences и Triggers синхронизированы с принятым окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`; изменение окна явно требует reindex KB. |
