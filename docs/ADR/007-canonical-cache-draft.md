@@ -32,17 +32,16 @@ Implemented artifact:
 ```bash
 python scripts/poc/semantic_cache_poc.py \
   --golden test_data/rag_golden_set.json \
-  --output reports/semantic_cache_poc.json \
+  --output reports/semantic_cache_poc_bge_m3.json \
   --thresholds 0.90 0.95 0.97 \
-  --embedding-backend hashing \
+  --embedding-backend bge-m3 \
   --min-records 50
 ```
 
 The script is standalone and does not modify `src/`, `configs/`, or `ui/`.
 Default mode uses deterministic normalized hashing so CI and fresh local clones
-do not need to download a model. The script also provides
-`--embedding-backend bge-m3` for local research runs with `BAAI/bge-m3` via
-`sentence-transformers`.
+do not need to download a model. The measured research run below used
+`--embedding-backend bge-m3` with `BAAI/bge-m3` via `sentence-transformers`.
 
 The shipped BL-05 Golden Set contains 32 items. To satisfy the Pilot sample-size
 constraint of at least 50 records, the PoC keeps the 32 original questions as
@@ -52,6 +51,8 @@ intent key, for 96 total replay records.
 ## Metrics
 
 Run date: 2026-05-19 UTC.
+
+Embedding backend: `BAAI/bge-m3`.
 
 Assumptions:
 
@@ -64,12 +65,12 @@ Assumptions:
 
 | Threshold | Hit Rate | Hit Precision | Accuracy Impact | Latency Savings | Token Savings |
 |-----------|----------|---------------|-----------------|-----------------|---------------|
-| 0.90 | 59.375% | 100% | 0% | 57.6432% | 46,990 |
-| 0.95 | 50.000% | 100% | 0% | 48.5417% | 39,546 |
-| 0.97 | 50.000% | 100% | 0% | 48.5417% | 39,546 |
+| 0.90 | 100.000% | 100% | 0% | 97.0833% | 79,210 |
+| 0.95 | 100.000% | 100% | 0% | 97.0833% | 79,210 |
+| 0.97 | 95.3125% | 100% | 0% | 92.5326% | 75,490 |
 
 At the baseline threshold `0.95`, all 32 canonical clusters received at least
-one hit, with largest observed cluster size `2`. No false-positive cache hits
+one hit, with largest observed cluster size `3`. No false-positive cache hits
 were observed in this replay.
 
 ## Decision
@@ -80,8 +81,6 @@ The `0.95` threshold is a viable candidate because it clears the BL-30 target
 of `>= 30%` hit rate and keeps measured accuracy impact at `0%` in the PoC.
 However, the result is not strong enough to accept a production cache because:
 
-- the default measured run uses deterministic hashing, not a completed
-  `BAAI/bge-m3` model run;
 - the replay stream is derived from Golden Set variants, not real historical
   BA/TZ traffic;
 - Golden Set intent keys validate query intent, but do not validate answer
