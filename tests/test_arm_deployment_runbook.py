@@ -62,6 +62,24 @@ def test_changelog_mentions_bl45_runbook() -> None:
     )
 
 
+def test_runbook_mentions_bl55_first_response_latency() -> None:
+    """BL-55 (issue #199): runbook §1 wording must stay in sync with spinner text.
+
+    The user-facing spinner says «Первый ответ на CPU может занять 60–90 сек.»
+    — the runbook is the authoritative source for that number, so it must
+    contain the same «60–90 сек» phrasing (with the en-dash) and reference
+    the BL-55 warmup button so operators know about both controls.
+    """
+    text = _read(RUNBOOK)
+
+    assert "60–90" in text, (
+        "Runbook must use the en-dash form '60–90' that matches the spinner "
+        "text shipped in src/ui/constants.py (BL-55)."
+    )
+    assert "BL-55" in text
+    assert "🔥 Прогреть модель" in text
+
+
 def test_runbook_mentions_bl50_startup_guard() -> None:
     """BL-50 (issue #194): runbook must point at the startup guard.
 

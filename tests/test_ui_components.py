@@ -174,6 +174,12 @@ def test_labels_dict_covers_every_required_ui_slot() -> None:
         # toasts
         "toast_history_cleared",
         "toast_search_success",
+        # BL-55 warmup button (issue #199)
+        "sidebar_warmup_button",
+        "sidebar_warmup_help",
+        "sidebar_warmup_in_progress",
+        "sidebar_warmup_success",
+        "sidebar_warmup_error",
     }
     missing = required_keys - set(constants.LABELS)
     assert not missing, f"LABELS dict is missing keys: {sorted(missing)}"
@@ -409,6 +415,163 @@ def test_top_k_tooltip_mentions_every_required_phrase() -> None:
     assert "Рекомендация" in tooltip
     # Label must follow business terminology — no «чанк» word stays anywhere.
     assert "чанк" not in cfg["ui"]["retrieval"]["top_k_label"].lower()
+
+
+# ----------------------------------------------- BL-55 warmup button (issue #199) --
+def test_should_render_warmup_button_for_debug_mode_true() -> None:
+    """BL-55: ``ui.debug_mode: true`` makes the button visible everywhere."""
+    from src.ui.components.sidebar import should_render_warmup_button
+
+    assert (
+        should_render_warmup_button(
+            {"ui": {"debug_mode": True}},
+            base_url="https://remote.example.com",
+        )
+        is True
+    )
+
+
+def test_should_render_warmup_button_hidden_for_remote_without_debug() -> None:
+    """BL-55: remote ``OLLAMA_BASE_URL`` + ``debug_mode=false`` hides the button."""
+    from src.ui.components.sidebar import should_render_warmup_button
+
+    assert (
+        should_render_warmup_button(
+            {"ui": {"debug_mode": False}},
+            base_url="https://remote.example.com",
+        )
+        is False
+    )
+    # Empty / missing config behaves the same as debug_mode=false.
+    assert (
+        should_render_warmup_button(None, base_url="https://remote.example.com")
+        is False
+    )
+
+
+def test_should_render_warmup_button_for_localhost_base_url() -> None:
+    """BL-55: localhost / 127.0.0.1 make the button visible without debug_mode."""
+    from src.ui.components.sidebar import should_render_warmup_button
+
+    for url in (
+        "http://localhost:11434",
+        "http://127.0.0.1:11434",
+        "https://localhost",
+        "localhost:11434",  # missing scheme — still recognised as local
+    ):
+        assert (
+            should_render_warmup_button({"ui": {"debug_mode": False}}, base_url=url)
+            is True
+        ), f"{url!r} must be treated as a local Ollama endpoint"
+
+
+def test_trigger_warmup_posts_expected_payload_to_api_generate(monkeypatch) -> None:
+    """BL-55: warmup must hit ``/api/generate`` with the fixed PII-free prompt."""
+    from src.ui.components import sidebar
+
+    captured: dict[str, Any] = {}
+
+    class _StubResponse:
+        status_code = 200
+        ok = True
+
+    def _fake_post(url, json=None, timeout=None, **_kwargs):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return _StubResponse()
+
+    result = sidebar.trigger_warmup(
+        base_url="http://localhost:11434",
+        model="qwen2.5:7b",
+        post=_fake_post,
+    )
+
+    assert captured["url"] == "http://localhost:11434/api/generate"
+    assert captured["json"] == {
+        "model": "qwen2.5:7b",
+        "prompt": "ok",
+        "keep_alive": "10m",
+    }
+    assert captured["timeout"] == sidebar.WARMUP_TIMEOUT_SECONDS
+    assert result["ok"] is True
+    assert result["status"] == 200
+
+
+def test_trigger_warmup_reports_failure_without_raising() -> None:
+    """BL-55: connection errors must surface as ``ok=False`` not as a traceback."""
+    from src.ui.components import sidebar
+
+    def _boom(*_args, **_kwargs):
+        raise ConnectionError("connection refused")
+
+    result = sidebar.trigger_warmup(
+        base_url="http://localhost:11434",
+        model="qwen2.5:7b",
+        post=_boom,
+    )
+    assert result["ok"] is False
+    assert "refused" in (result.get("error") or "").lower()
+    assert result["url"].endswith("/api/generate")
+
+
+def test_render_warmup_button_returns_none_when_hidden() -> None:
+    """BL-55: hidden button must short-circuit before touching ``st.button``."""
+    from src.ui.components import sidebar
+
+    sentinel_called: list[bool] = []
+
+    def _post(*_args, **_kwargs):
+        sentinel_called.append(True)
+        return None
+
+    result = sidebar.render_warmup_button(
+        {"ui": {"debug_mode": False}},
+        base_url="https://remote.example.com",
+        post=_post,
+        background=False,
+    )
+    assert result is None
+    assert sentinel_called == []
+
+
+def test_render_warmup_button_triggers_warmup_on_click(monkeypatch) -> None:
+    """BL-55: clicking the button calls ``post`` with the warmup payload."""
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+    from src.ui.components import sidebar
+
+    monkeypatch.setattr(st, "button", lambda *_a, **_kw: True)
+    success_calls: list[str] = []
+    monkeypatch.setattr(st, "success", lambda msg: success_calls.append(msg))
+    error_calls: list[str] = []
+    monkeypatch.setattr(st, "error", lambda msg: error_calls.append(msg))
+
+    posted: dict[str, Any] = {}
+
+    class _StubResponse:
+        status_code = 200
+        ok = True
+
+    def _post(url, json=None, timeout=None, **_kw):
+        posted["url"] = url
+        posted["json"] = json
+        return _StubResponse()
+
+    result = sidebar.render_warmup_button(
+        {"ui": {"debug_mode": True}},
+        base_url="http://localhost:11434",
+        model="qwen2.5:7b",
+        post=_post,
+        background=False,
+    )
+
+    assert result is not None
+    assert result["ok"] is True
+    assert posted["json"]["prompt"] == "ok"
+    assert posted["json"]["keep_alive"] == "10m"
+    assert posted["url"] == "http://localhost:11434/api/generate"
+    assert success_calls, "Success label must be shown when warmup succeeds"
+    assert error_calls == []
 
 
 def test_ui_config_retrieval_section_is_complete() -> None:

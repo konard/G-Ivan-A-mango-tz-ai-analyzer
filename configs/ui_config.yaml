@@ -1,5 +1,11 @@
 ui:
   debug_error_details: false
+  # BL-55 (issue #199): renders the «🔥 Прогреть модель» warmup button in the
+  # sidebar even when OLLAMA_BASE_URL points at a remote host. Operators flip
+  # this on locally to verify Ollama responds to the warmup ping without
+  # editing code; it stays off in shipped configs so cloud pilots never see
+  # the button.
+  debug_mode: false
   retrieval:
     # BL-48.6 (issue #184): бизнес-понятные настройки глубины поиска по БЗ.
     # Слайдер в сайдбаре читает все значения отсюда, чтобы тексты и пределы

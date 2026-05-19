@@ -678,12 +678,14 @@ def render_sidebar(
     *,
     max_history_messages: int,
     retrieval_settings: Optional[Dict[str, Any]] = None,
+    ui_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return _render_sidebar_component(
         retriever_info,
         max_history_messages=max_history_messages,
         env_path=ENV_PATH,
         retrieval_settings=retrieval_settings or get_retrieval_settings(),
+        ui_config=ui_config if ui_config is not None else load_ui_config(),
     )
 
 

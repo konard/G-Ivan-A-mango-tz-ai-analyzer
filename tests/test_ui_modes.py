@@ -494,10 +494,12 @@ def test_render_sidebar_forwards_retrieval_settings(monkeypatch) -> None:
         max_history_messages,
         env_path,
         retrieval_settings,
+        ui_config=None,
     ):
         captured["retrieval_settings"] = retrieval_settings
         captured["env_path"] = env_path
         captured["max_history_messages"] = max_history_messages
+        captured["ui_config"] = ui_config
         return {"mode": app.MODE_STATELESS, "debug": False, "top_k": 5, "clear_history": False}
 
     monkeypatch.setattr(app, "_render_sidebar_component", _fake_component)

@@ -7,6 +7,49 @@
 ## [Unreleased]
 
 ### Code
+- **CODE+DOCS: BL-55 first-response UX (spinner + warmup) (issue #199).**
+  Спиннер «Спрашиваем LLM…» в [`src/ui/constants.py`](src/ui/constants.py)
+  теперь содержит явное предупреждение «⏱ Первый ответ на CPU может
+  занять 60–90 сек.», чтобы БА на CPU-only АРМ не воспринимал cold-start
+  `qwen2.5:7b` как зависание UI (см. отчёт тестировщика
+  [issue #182](https://github.com/G-Ivan-A/clarify-engine-ai/issues/182)
+  §2 / Проблема #6). В сайдбаре добавлена опциональная кнопка
+  **«🔥 Прогреть модель»**
+  ([`src/ui/components/sidebar.py`](src/ui/components/sidebar.py)): она
+  отправляет фоновый `requests.post(OLLAMA_BASE_URL + "/api/generate",
+  json={"model": OLLAMA_MODEL, "prompt": "ok", "keep_alive": "10m"},
+  timeout=120)` через `threading.Thread(daemon=True)`, поэтому Streamlit-
+  поток не блокируется на 60–90 сек. Видимость кнопки строго ограничена:
+  (a) `ui.debug_mode: true` в
+  [`configs/ui_config.yaml`](configs/ui_config.yaml) ИЛИ (b)
+  `OLLAMA_BASE_URL` указывает на `127.0.0.1` / `localhost` / `::1` —
+  иначе кнопка скрыта, чтобы пилотный или облачный Ollama не получал
+  warmup-флуд (BL-51 совместимость). PII / маскирование: warmup-prompt
+  фиксирован строкой `"ok"`, пользовательские данные не логируются и не
+  передаются. Failure handling: при connection refused / timeout кнопка
+  показывает `st.error("Ollama не отвечает на прогрев")` со ссылкой на
+  runbook §6, а не падает в общий error-handler. Документация
+  синхронизирована: [`docs/user_guide/01_intro_modes.md`](docs/user_guide/01_intro_modes.md)
+  получил блок «⏱ Первый ответ на CPU-only АРМ — 60–90 сек»,
+  [`docs/user_guide/04_troubleshooting.md`](docs/user_guide/04_troubleshooting.md)
+  — раздел «Долгий первый ответ (60–90 сек на CPU)»,
+  [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md)
+  §1 и §2 — формулировка «60–90 секунд» (en-dash) синхронизирована со
+  spinner-текстом, добавлена ссылка на BL-55 и кнопку прогрева.
+  Покрытие: [`tests/test_ui_constants.py`](tests/test_ui_constants.py)
+  пинит «60–90» и provider-chain в `LABELS.spinner_llm`,
+  [`tests/test_ui_components.py`](tests/test_ui_components.py) проверяет
+  видимость кнопки (`debug_mode=true` → видна,
+  `OLLAMA_BASE_URL=https://remote.example.com` + `debug_mode=false` →
+  скрыта, localhost-варианты → видна), тело warmup-запроса (POST на
+  `/api/generate` c фиксированным `prompt="ok"` и `keep_alive="10m"`),
+  устойчивость к `ConnectionError` и success/error-ветки рендера.
+  [`tests/test_arm_deployment_runbook.py`](tests/test_arm_deployment_runbook.py)
+  расширен smoke-кейсом «60–90 сек + 🔥 Прогреть модель» для контроля
+  синхронизации runbook ↔ spinner. Backward compat:
+  `src.ui.app.render_sidebar` принимает новый опциональный `ui_config`,
+  старые вызовы без него продолжают работать через `load_ui_config()`.
+
 - **CODE: BL-50 `.env` startup validation (issue #194).** Добавлен
   startup-guard в новом модуле
   [`src/config_loader.py`](src/config_loader.py): `validate_env()`
