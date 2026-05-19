@@ -6,6 +6,44 @@
 
 ## [Unreleased]
 
+### Code
+- **CODE: BL-50 `.env` startup validation (issue #194).** Добавлен
+  startup-guard в новом модуле
+  [`src/config_loader.py`](src/config_loader.py): `validate_env()`
+  вызывается из `src/pipeline.py::main` и `src/ui/app.py::main` **до**
+  любого чтения `os.environ`. Контракт BL-50 (см.
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md)
+  §4.2): (1) если рядом с проектом лежит `.env.txt`, а `.env`
+  отсутствует — guard останавливает запуск с подсказкой
+  `ren .env.txt .env` (silent rename запрещён, см. issue
+  [#182](https://github.com/G-Ivan-A/clarify-engine-ai/issues/182) §1.4
+  Notepad-проблема); (2) если `.env` и `.env.txt` отсутствуют, но есть
+  `.env.example` — guard копирует пример в `.env` и пишет
+  `logger.info("Создан .env из .env.example")`; (3) после загрузки
+  переменные `OLLAMA_MODEL` и `OLLAMA_BASE_URL` валидируются на
+  непустоту, иначе детерминированная остановка со ссылкой на
+  `docs/user_guide/04_troubleshooting.md`. Покрытие:
+  [`tests/test_env_validation.py`](tests/test_env_validation.py) (пять
+  сценариев — три обязательных по DoD плюс отсутствие `.env.example` и
+  happy-path с уже загруженным `.env`),
+  [`tests/test_arm_deployment_runbook.py`](tests/test_arm_deployment_runbook.py)
+  расширен smoke-кейсом «после удаления `.env` guard создаёт его из
+  `.env.example`» и проверкой ссылки на BL-50 в runbook.
+  [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md)
+  §1–§6 — добавлен Notepad-warning со ссылкой «BL-50 startup-guard
+  скажет вам об этом автоматически», шаг `copy .env.example .env`
+  помечен как опциональный, в типовых ошибках появились строки
+  «Обнаружен файл `.env.txt`» и «В `.env` отсутствуют или пустые
+  обязательные переменные».
+  [`docs/user_guide/04_troubleshooting.md`](docs/user_guide/04_troubleshooting.md)
+  — новый раздел «`.env` не найден или сохранён как `.env.txt`»
+  описывает три ветки поведения guard'а для бизнес-аналитика. PII /
+  маскирование: в сообщениях фигурируют только имена файлов, без
+  содержимого `.env`, поэтому существующий sanitiser BL-23 пропускает
+  их без изменений. Backward compat: deployment-ы с корректным `.env`
+  (включая теневое окружение, заполненное через `setx` без файла) не
+  меняют поведения.
+
 ### Documentation
 - **DOCUMENTATION: issue #192 — Sprint 5 kickoff (BL-53, BL-55) + sub-issues.**
   Сформирован kickoff-документ Sprint 5
@@ -31,6 +69,19 @@
   задачи UX-polish, изолированы от RAG-пайплайна и могут стартовать после
   закрытия Sprint 4. Sync §0.6 v1.5 (`📝 New → 🟡 In Progress` для BL-53/
   BL-55) и Sprint-5 Execution Report — отдельными последующими PR.
+- **DOCUMENTATION: issue #190 — Sprint 4 parallel BL-48 installer PoC kickoff.**
+  Сформирован kickoff-документ
+  [`docs/analysis/2026-05-20_sprint-4-parallel-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-parallel-kickoff_v1.md)
+  по §7 «Sprint 4 (parallel)» бэклога
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md).
+  Документ фиксирует scope **BL-48 ARM Installer L1** (`clarify-setup.cmd`
+  + `clarify-setup.py` First-Run wizard), зависимости BL-50..BL-52,
+  Definition of Ready / Definition of Done, риски, открытые вопросы для PO
+  и готовую формулировку GitHub issue. Первый implementation PR BL-48
+  ограничивается Installer L1 / PoC-1 из BL-47 research §6; BL-48.1
+  (KB Update UI), BL-48.2 (TZ upload tab) и BL-48.3 (ADR-011) вынесены
+  в отдельные последующие issues после PO-согласования. Документ остаётся
+  `Draft → Review`; кодовые изменения стартуют только после Accepted PO.
 - **DOCUMENTATION: issue #187 — Sprint 4 kickoff (BL-50, BL-51, BL-54).**
   Сформирован kickoff-документ Sprint 4
   [`docs/analysis/2026-05-20_sprint-4-kickoff_v1.md`](docs/analysis/2026-05-20_sprint-4-kickoff_v1.md)
