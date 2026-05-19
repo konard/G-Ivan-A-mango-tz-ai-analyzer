@@ -1,5 +1,10 @@
 ui:
   debug_error_details: false
+  # BL-54 (issue #196): default UI in «📊 Анализ ТЗ» is the file-upload
+  # pipeline flow described in `docs/user_guide/02_interface_elements.md` §2.
+  # Set `analysis_query_mode: true` only to opt back into the legacy
+  # query-style RAG flow (e.g. for BL-43 E2E reruns).
+  analysis_query_mode: false
   retrieval:
     # BL-48.6 (issue #184): бизнес-понятные настройки глубины поиска по БЗ.
     # Слайдер в сайдбаре читает все значения отсюда, чтобы тексты и пределы

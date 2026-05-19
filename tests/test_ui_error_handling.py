@@ -194,6 +194,10 @@ def test_run_analysis_mode_disables_controls_while_pending(monkeypatch) -> None:
         captured["button_disabled"] = kwargs.get("disabled")
         return False
 
+    # BL-54 (issue #196) makes the upload flow the default; the
+    # text_area/button-disabling contract still applies to the legacy
+    # query-style path, so opt into it explicitly here.
+    monkeypatch.setattr(app, "get_analysis_query_mode", lambda *_a, **_kw: True)
     monkeypatch.setattr(app, "_render_analysis_export_button", lambda: None)
     monkeypatch.setattr(app, "_render_retry_notice", lambda _mode: False)
     monkeypatch.setattr(app, "_render_analysis_result", lambda _debug: False)

@@ -24,6 +24,7 @@ import hashlib
 import logging
 import re
 import tempfile
+import time
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -61,6 +62,7 @@ from src.ui.constants import (
     MODE_ORDER,
     MODE_STATELESS,
     RETRY_BUTTON_LABEL,
+    SESSION_ANALYSIS_LAST_RUN_KEY,
     SESSION_EXPORT_FORMAT_KEY,
     SESSION_LAST_ANALYSIS_RESULT_KEY,
     SESSION_LAST_ERROR_KEY,
@@ -226,6 +228,22 @@ def get_debug_error_details(ui_config: Optional[Dict[str, Any]] = None) -> bool:
     if not isinstance(ui_cfg, dict):
         return False
     return bool(ui_cfg.get("debug_error_details", False))
+
+
+def get_analysis_query_mode(ui_config: Optional[Dict[str, Any]] = None) -> bool:
+    """Return true when the legacy query-style «Анализ ТЗ» path is opt-in.
+
+    BL-54 (issue #196) restores the file-upload-driven flow in the
+    «📊 Анализ ТЗ» mode. The previous query-style flow stays available
+    only behind ``ui.analysis_query_mode: true`` in
+    ``configs/ui_config.yaml`` so BL-43 E2E callers can opt back in
+    without re-introducing the regression for end users.
+    """
+    cfg = ui_config if ui_config is not None else load_ui_config()
+    ui_cfg = cfg.get("ui") if isinstance(cfg, dict) else None
+    if not isinstance(ui_cfg, dict):
+        return False
+    return bool(ui_cfg.get("analysis_query_mode", False))
 
 
 def get_retrieval_settings(
@@ -1018,7 +1036,182 @@ def _show_toast(message: str, *, icon: Optional[str] = None) -> None:
 
 
 def _run_analysis_mode(*, settings: Dict[str, Any]) -> None:
-    """Stateless TZ-analysis path — no history."""
+    """Stateless TZ-analysis path — file upload pipeline flow (BL-54).
+
+    The default path implements user guide §2 + runbook §1.8: file
+    uploader (``.xlsx`` / ``.docx`` ≤ 10 МБ) → export format radio →
+    «🚀 Запустить анализ» → ``run_analysis`` → ``st.download_button``.
+    The legacy query-style flow stays behind
+    ``ui.analysis_query_mode: true`` in ``configs/ui_config.yaml``.
+    """
+    if get_analysis_query_mode():
+        _run_analysis_query_mode(settings=settings)
+        return
+    _run_analysis_upload_mode()
+
+
+def _run_analysis_upload_mode() -> None:
+    """BL-54 upload → analyse → download flow."""
+    from src.ui.components.analysis_uploader import (
+        DEFAULT_HELP,
+        MAX_UPLOAD_SIZE_BYTES,
+        SUPPORTED_EXTENSIONS,
+        render_analysis_uploader,
+    )
+
+    uploaded_file = render_analysis_uploader(
+        LABELS["analysis_uploader_label"],
+        types=SUPPORTED_EXTENSIONS,
+        help_text=LABELS.get("analysis_uploader_help", DEFAULT_HELP),
+        max_size_bytes=MAX_UPLOAD_SIZE_BYTES,
+        extension_error_template=LABELS["analysis_uploader_extension_error_template"],
+        size_error_template=LABELS["analysis_uploader_size_error_template"],
+        key="analysis_uploaded_file",
+    )
+
+    selected_format = _ensure_export_format_state()
+    st.radio(
+        LABELS["export_format_label"],
+        options=list(EXPORT_FORMAT_LABELS),
+        format_func=lambda value: EXPORT_FORMAT_LABELS.get(value, value),
+        key=SESSION_EXPORT_FORMAT_KEY,
+        horizontal=True,
+        help=LABELS["export_format_help"],
+    )
+    selected_format = str(
+        st.session_state.get(SESSION_EXPORT_FORMAT_KEY) or "xlsx"
+    ).lower()
+    if selected_format not in EXPORT_FORMAT_LABELS:
+        selected_format = "xlsx"
+        st.session_state[SESSION_EXPORT_FORMAT_KEY] = selected_format
+
+    run_clicked = st.button(
+        LABELS["analysis_run_button"],
+        type="primary",
+        disabled=uploaded_file is None,
+    )
+
+    if run_clicked and uploaded_file is not None:
+        _execute_analysis_pipeline(uploaded_file, output_format=selected_format)
+    elif run_clicked and uploaded_file is None:
+        st.warning(LABELS["analysis_no_file_warning"])
+
+    last_run = st.session_state.get(SESSION_ANALYSIS_LAST_RUN_KEY)
+    if isinstance(last_run, dict):
+        _render_analysis_run_summary(last_run)
+    else:
+        st.info(LABELS["analysis_intro_upload_info"])
+
+
+def _execute_analysis_pipeline(uploaded_file: Any, *, output_format: str) -> None:
+    """Persist the upload, run the pipeline, and store result bytes in session."""
+    from src.pipeline import run_analysis
+
+    safe_format = output_format if output_format in EXPORT_FORMAT_LABELS else "xlsx"
+    run_id = _new_run_id()
+    raw_name = str(getattr(uploaded_file, "name", "") or "upload")
+    suffix = Path(raw_name).suffix or ".xlsx"
+    file_bytes = uploaded_file.getvalue()
+    safe_name = _sanitize_filename_for_log(raw_name)
+
+    started_at = time.monotonic()
+    logger.info(
+        "analysis_upload_pipeline started",
+        extra={
+            "event": "ANALYSIS_PIPELINE_START",
+            "run_id": run_id,
+            "upload_filename": safe_name,
+            "output_format": safe_format,
+            "size_bytes": len(file_bytes),
+        },
+    )
+
+    try:
+        with st.spinner(LABELS["analysis_run_in_progress"]):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_path = Path(tmp_dir)
+                input_path = tmp_path / f"input{suffix}"
+                output_ext = EXPORT_FORMAT_LABELS[safe_format].lstrip(".")
+                output_path = tmp_path / f"result_{run_id}.{output_ext}"
+                input_path.write_bytes(file_bytes)
+
+                stats = run_analysis(
+                    input_file=str(input_path),
+                    output_file=str(output_path),
+                    run_id=run_id,
+                )
+                report_bytes = output_path.read_bytes()
+    except Exception as exc:  # noqa: BLE001 - UI must surface the failure.
+        st.error(LABELS["analysis_pipeline_error_template"].format(error=exc))
+        _safe_log_ui_error(
+            run_id=run_id,
+            mode=MODE_STATELESS,
+            provider="pipeline",
+            exc=exc,
+        )
+        return
+
+    duration_seconds = time.monotonic() - started_at
+    base_stem = Path(raw_name).stem or "clarify-analysis"
+    result_filename = f"{base_stem}__result_{run_id}.{output_ext}"
+    st.session_state[SESSION_ANALYSIS_LAST_RUN_KEY] = {
+        "run_id": run_id,
+        "filename": result_filename,
+        "report_bytes": report_bytes,
+        "stats": stats.as_dict(),
+        "format": safe_format,
+        "duration_seconds": duration_seconds,
+    }
+    logger.info(
+        "analysis_upload_pipeline finished",
+        extra={
+            "event": "ANALYSIS_PIPELINE_FINISH",
+            "run_id": run_id,
+            "upload_filename": safe_name,
+            "output_format": safe_format,
+            "duration_seconds": duration_seconds,
+            "stats": stats.as_dict(),
+        },
+    )
+    _show_toast(LABELS["toast_search_success"], icon="✅")
+
+
+def _render_analysis_run_summary(last_run: Dict[str, Any]) -> None:
+    """Render the post-run status banner + download button."""
+    stats = last_run.get("stats") or {}
+    fmt = str(last_run.get("format") or "xlsx")
+    label = EXPORT_FORMAT_LABELS.get(fmt, f".{fmt}")
+    mime = EXPORT_MIME_TYPES.get(fmt, "application/octet-stream")
+
+    st.success(
+        LABELS["analysis_run_success_template"].format(
+            run_id=str(last_run.get("run_id") or ""),
+            total=int(stats.get("total") or 0),
+            success=int(stats.get("success") or 0),
+            errors=int(stats.get("errors") or 0),
+            nd=int(stats.get("nd") or 0),
+            duration_seconds=float(last_run.get("duration_seconds") or 0.0),
+        )
+    )
+    st.download_button(
+        LABELS["analysis_download_button_template"].format(label=label),
+        data=BytesIO(last_run.get("report_bytes") or b""),
+        file_name=str(last_run.get("filename") or f"clarify-analysis.{fmt}"),
+        mime=mime,
+        disabled=not bool(last_run.get("report_bytes")),
+    )
+
+
+def _sanitize_filename_for_log(name: str) -> str:
+    """Route a filename through the BL-23 sanitiser before logging."""
+    from src.llm.masking import sanitize_log_record
+
+    sanitized = sanitize_log_record({"message": str(name)})
+    return str(sanitized.get("message") or "")
+
+
+def _run_analysis_query_mode(*, settings: Dict[str, Any]) -> None:
+    """Legacy query-style RAG flow (BL-54 opt-in via ``ui.analysis_query_mode``)."""
     processing = _is_mode_processing(MODE_STATELESS)
     _render_analysis_export_button()
     query = st.text_area(
