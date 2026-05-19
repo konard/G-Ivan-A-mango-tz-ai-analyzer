@@ -677,3 +677,334 @@ def test_retrieve_and_answer_ignores_multi_hop_in_analysis_mode(monkeypatch) -> 
     assert captured["multi_hop"] is False
     assert "<context>" in prompt
     assert captured["enable_query_expansion"] is False
+
+
+# ----------------------------------------- BL-54 analysis upload flow (#196) --
+class _StubUpload:
+    """Minimal stand-in for Streamlit's ``UploadedFile`` for tests."""
+
+    def __init__(self, name: str = "input.xlsx", data: bytes = b"payload") -> None:
+        self.name = name
+        self._data = data
+        self.size = len(data)
+
+    def getvalue(self) -> bytes:
+        return self._data
+
+    def getbuffer(self) -> bytes:
+        return self._data
+
+
+def _patch_streamlit_widgets(monkeypatch, *, uploaded=None, format_choice="xlsx"):
+    """Wire the streamlit stub so the upload-mode flow runs end-to-end."""
+    recorded = {
+        "file_uploader": [],
+        "radio": [],
+        "button": [],
+        "download_button": [],
+        "warnings": [],
+        "errors": [],
+        "successes": [],
+        "infos": [],
+    }
+
+    monkeypatch.setattr(
+        st,
+        "file_uploader",
+        lambda *args, **kwargs: (
+            recorded["file_uploader"].append((args, kwargs)) or uploaded
+        ),
+    )
+
+    def _radio(*args, **kwargs):
+        recorded["radio"].append((args, kwargs))
+        st.session_state[kwargs.get("key", "")] = format_choice
+        return format_choice
+
+    monkeypatch.setattr(st, "radio", _radio)
+    monkeypatch.setattr(
+        st,
+        "button",
+        lambda *args, **kwargs: (recorded["button"].append((args, kwargs)) or False),
+    )
+    monkeypatch.setattr(
+        st,
+        "download_button",
+        lambda *args, **kwargs: recorded["download_button"].append((args, kwargs)),
+    )
+    monkeypatch.setattr(st, "warning", lambda msg: recorded["warnings"].append(msg))
+    monkeypatch.setattr(st, "error", lambda msg: recorded["errors"].append(msg))
+    monkeypatch.setattr(st, "success", lambda msg: recorded["successes"].append(msg))
+    monkeypatch.setattr(st, "info", lambda msg: recorded["infos"].append(msg))
+    return recorded
+
+
+def test_get_analysis_query_mode_defaults_to_false() -> None:
+    """BL-54 (issue #196): the default analysis path is the upload flow."""
+    assert app.get_analysis_query_mode({}) is False
+    assert app.get_analysis_query_mode({"ui": {}}) is False
+    assert app.get_analysis_query_mode({"ui": "not-a-dict"}) is False
+
+
+def test_get_analysis_query_mode_reads_flag() -> None:
+    assert app.get_analysis_query_mode({"ui": {"analysis_query_mode": True}}) is True
+    assert (
+        app.get_analysis_query_mode({"ui": {"analysis_query_mode": False}}) is False
+    )
+
+
+def test_shipped_ui_config_defaults_to_upload_flow() -> None:
+    """``configs/ui_config.yaml`` ships with the upload flow as the default."""
+    config = app.load_ui_config()
+    assert app.get_analysis_query_mode(config) is False
+
+
+def test_run_analysis_mode_dispatches_to_upload_by_default(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        app, "_run_analysis_upload_mode", lambda: calls.append("upload")
+    )
+    monkeypatch.setattr(
+        app,
+        "_run_analysis_query_mode",
+        lambda *, settings: calls.append(("query", settings)),
+    )
+    monkeypatch.setattr(app, "get_analysis_query_mode", lambda *_a, **_kw: False)
+
+    app._run_analysis_mode(settings={"top_k": 5, "debug": False})
+
+    assert calls == ["upload"]
+
+
+def test_run_analysis_mode_dispatches_to_query_when_flag_enabled(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        app, "_run_analysis_upload_mode", lambda: calls.append("upload")
+    )
+    monkeypatch.setattr(
+        app,
+        "_run_analysis_query_mode",
+        lambda *, settings: calls.append(("query", settings)),
+    )
+    monkeypatch.setattr(app, "get_analysis_query_mode", lambda *_a, **_kw: True)
+
+    app._run_analysis_mode(settings={"top_k": 5, "debug": False})
+
+    assert calls == [("query", {"top_k": 5, "debug": False})]
+
+
+def test_run_analysis_upload_mode_renders_uploader_and_intro(monkeypatch) -> None:
+    """Empty state: uploader + format radio + run button + intro info."""
+    st.session_state.clear()
+    recorded = _patch_streamlit_widgets(monkeypatch, uploaded=None)
+
+    app._run_analysis_upload_mode()
+
+    assert recorded["file_uploader"], "Uploader widget must always render"
+    assert recorded["radio"], "Format radio must always render"
+    assert recorded["button"], "Run button must always render"
+    # Run button is disabled when no file is uploaded.
+    assert recorded["button"][0][1].get("disabled") is True
+    # Intro info appears when nothing has been analyzed yet.
+    assert recorded["infos"]
+    # No download_button appears until a run completes.
+    assert recorded["download_button"] == []
+
+
+def test_run_analysis_upload_mode_executes_pipeline_when_button_clicked(
+    monkeypatch,
+) -> None:
+    """Happy path: click → pipeline runs → session state populated."""
+    st.session_state.clear()
+    uploaded = _StubUpload("tz.xlsx", data=b"requirements")
+    recorded = _patch_streamlit_widgets(
+        monkeypatch, uploaded=uploaded, format_choice="xlsx"
+    )
+
+    # Stand the run button up as clicked exactly once.
+    button_calls: list = []
+
+    def _button(*args, **kwargs):
+        button_calls.append((args, kwargs))
+        # First call is the run button.
+        return len(button_calls) == 1
+
+    monkeypatch.setattr(st, "button", _button)
+
+    executed = {}
+
+    def _execute(file, *, output_format):
+        executed["file"] = file
+        executed["output_format"] = output_format
+        st.session_state[app.SESSION_ANALYSIS_LAST_RUN_KEY] = {
+            "run_id": "run-xyz",
+            "filename": "tz__result_run-xyz.xlsx",
+            "report_bytes": b"report-bytes",
+            "stats": {"total": 1, "success": 1, "errors": 0, "nd": 0},
+            "format": output_format,
+            "duration_seconds": 4.2,
+        }
+
+    monkeypatch.setattr(app, "_execute_analysis_pipeline", _execute)
+
+    app._run_analysis_upload_mode()
+
+    assert executed == {"file": uploaded, "output_format": "xlsx"}
+    # Download button must render with the result bytes.
+    assert recorded["download_button"]
+    download_kwargs = recorded["download_button"][0][1]
+    assert download_kwargs["file_name"].endswith(".xlsx")
+    assert download_kwargs["mime"] == app.EXPORT_MIME_TYPES["xlsx"]
+    assert download_kwargs["disabled"] is False
+    # Success banner mentions the run_id.
+    assert any("run-xyz" in msg for msg in recorded["successes"])
+
+
+def test_execute_analysis_pipeline_writes_session_state(monkeypatch, tmp_path) -> None:
+    """``_execute_analysis_pipeline`` persists the report bytes + stats."""
+    st.session_state.clear()
+    uploaded = _StubUpload("brief.docx", data=b"file-body")
+
+    monkeypatch.setattr(app, "_show_toast", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "spinner", lambda *_a, **_kw: _NullCtx())
+    monkeypatch.setattr(st, "error", lambda *_a, **_kw: None)
+
+    class _Stats:
+        def as_dict(self):
+            return {
+                "run_id": "stub",
+                "total": 3,
+                "success": 2,
+                "errors": 0,
+                "nd": 1,
+                "by_provider": {},
+            }
+
+    captured = {}
+
+    def _fake_run_analysis(*, input_file, output_file, run_id):
+        captured["input_file"] = input_file
+        captured["output_file"] = output_file
+        captured["run_id"] = run_id
+        Path(output_file).write_bytes(b"report-result")
+        return _Stats()
+
+    fake_pipeline = ModuleType("src.pipeline")
+    fake_pipeline.run_analysis = _fake_run_analysis
+    monkeypatch.setitem(sys.modules, "src.pipeline", fake_pipeline)
+
+    app._execute_analysis_pipeline(uploaded, output_format="docx")
+
+    last_run = st.session_state.get(app.SESSION_ANALYSIS_LAST_RUN_KEY)
+    assert isinstance(last_run, dict)
+    assert last_run["report_bytes"] == b"report-result"
+    assert last_run["filename"].startswith("brief__result_")
+    assert last_run["filename"].endswith(".docx")
+    assert last_run["format"] == "docx"
+    assert last_run["stats"]["total"] == 3
+    assert last_run["duration_seconds"] >= 0.0
+    # The pipeline was given a temp path with the right suffix.
+    assert captured["input_file"].endswith(".docx")
+    assert captured["output_file"].endswith(".docx")
+
+
+def test_execute_analysis_pipeline_surfaces_errors(monkeypatch) -> None:
+    """Pipeline exceptions render an error banner and do not crash Streamlit."""
+    st.session_state.clear()
+    errors: list = []
+    monkeypatch.setattr(st, "spinner", lambda *_a, **_kw: _NullCtx())
+    monkeypatch.setattr(st, "error", lambda msg: errors.append(msg))
+    monkeypatch.setattr(app, "_safe_log_ui_error", lambda **_kw: None)
+
+    def _boom(*, input_file, output_file, run_id):
+        raise RuntimeError("parser exploded")
+
+    fake_pipeline = ModuleType("src.pipeline")
+    fake_pipeline.run_analysis = _boom
+    monkeypatch.setitem(sys.modules, "src.pipeline", fake_pipeline)
+
+    uploaded = _StubUpload("bad.xlsx", data=b"x")
+    app._execute_analysis_pipeline(uploaded, output_format="xlsx")
+
+    assert errors
+    assert "parser exploded" in errors[0]
+    assert app.SESSION_ANALYSIS_LAST_RUN_KEY not in st.session_state
+
+
+def test_render_analysis_run_summary_uses_format_metadata(monkeypatch) -> None:
+    """The summary uses the per-format download label, mime, and file name."""
+    st.session_state.clear()
+    successes: list = []
+    downloads: list = []
+    monkeypatch.setattr(st, "success", lambda msg: successes.append(msg))
+    monkeypatch.setattr(
+        st, "download_button", lambda *args, **kwargs: downloads.append((args, kwargs))
+    )
+
+    last_run = {
+        "run_id": "run-42",
+        "filename": "tz__result_run-42.md",
+        "report_bytes": b"# report",
+        "stats": {"total": 2, "success": 1, "errors": 1, "nd": 0},
+        "format": "md",
+        "duration_seconds": 12.34,
+    }
+    app._render_analysis_run_summary(last_run)
+
+    assert successes and "run-42" in successes[0]
+    assert downloads
+    args, kwargs = downloads[0]
+    assert args[0] == "📥 Скачать отчёт (.md)"
+    assert kwargs["file_name"] == "tz__result_run-42.md"
+    assert kwargs["mime"] == app.EXPORT_MIME_TYPES["md"]
+    assert kwargs["disabled"] is False
+
+
+def test_render_analysis_run_summary_disables_download_when_empty(monkeypatch) -> None:
+    st.session_state.clear()
+    downloads: list = []
+    monkeypatch.setattr(st, "success", lambda _msg: None)
+    monkeypatch.setattr(
+        st, "download_button", lambda *args, **kwargs: downloads.append((args, kwargs))
+    )
+
+    app._render_analysis_run_summary(
+        {
+            "run_id": "run",
+            "filename": "tz.xlsx",
+            "report_bytes": b"",
+            "stats": {},
+            "format": "xlsx",
+            "duration_seconds": 0.0,
+        }
+    )
+
+    assert downloads
+    assert downloads[0][1]["disabled"] is True
+
+
+def test_sanitize_filename_for_log_uses_bl23_masker(monkeypatch) -> None:
+    """BL-54 PII clause: filenames never reach the logger unmasked."""
+    from src.llm import masking
+
+    captured: dict = {}
+
+    def _spy(record, **_kwargs):
+        captured.update(record)
+        return {"message": "[REDACTED]"}
+
+    monkeypatch.setattr(masking, "sanitize_log_record", _spy)
+
+    safe = app._sanitize_filename_for_log("alice@example.com.xlsx")
+    assert safe == "[REDACTED]"
+    assert captured["message"] == "alice@example.com.xlsx"
+
+
+class _NullCtx:
+    """Tiny context manager stand-in for ``st.spinner``."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False

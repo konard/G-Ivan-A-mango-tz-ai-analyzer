@@ -7,6 +7,53 @@
 ## [Unreleased]
 
 ### Code
+- **CODE: BL-54 restore file uploader in «📊 Анализ ТЗ» (issue #196).**
+  Восстановлен пилотный use-case бизнес-аналитика (загрузка `.xlsx`/`.docx`
+  ТЗ → выбор формата отчёта → запуск анализа → скачивание результата),
+  потерянный в рефакторе BL-41 (см.
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md)
+  §4.6, P0 pilot blocker). Реализация: новый компонент
+  [`src/ui/components/analysis_uploader.py`](src/ui/components/analysis_uploader.py)
+  с валидацией расширения (FR-01: только `.xlsx`/`.docx`) и размера
+  (NFR-09: 10 МБ); рерайт `_run_analysis_mode` в
+  [`src/ui/app.py`](src/ui/app.py) на dispatch между новым
+  `_run_analysis_upload_mode` (по умолчанию) и legacy
+  `_run_analysis_query_mode` (за флагом). `_run_analysis_upload_mode`
+  рендерит uploader + radio форматов (`xlsx`/`docx`/`md` через
+  `EXPORT_FORMAT_LABELS` BL-28) + кнопку «🚀 Запустить анализ»;
+  `_execute_analysis_pipeline` пишет байты во временный файл,
+  вызывает `src.pipeline.run_analysis(...)`, сохраняет
+  `report_bytes`+`stats`+`run_id`+`duration_seconds` в
+  `SESSION_ANALYSIS_LAST_RUN_KEY`; `_render_analysis_run_summary` отдаёт
+  `st.download_button` с per-format `mime`/`file_name`
+  (`{stem}__result_{run_id}.{ext}`). Spinner-текст
+  «Идёт анализ требований… NFR-03: ≤ 15 мин на CPU-only» явно ссылается
+  на бюджет латентности. Старый query-style flow сохранён за флагом
+  `ui.analysis_query_mode: true` в
+  [`configs/ui_config.yaml`](configs/ui_config.yaml) (default `false`)
+  для совместимости с BL-43 E2E и regression-кейсом
+  `tests/test_ui_error_handling.py::test_run_analysis_mode_disables_controls_while_pending`.
+  PII / маскирование: имена загружаемых файлов проходят через
+  `sanitize_log_record` (BL-23) перед логированием; ключ extra
+  переименован в `upload_filename`, чтобы не конфликтовать со стандартным
+  атрибутом `LogRecord.filename`. Label «📊 Анализ ТЗ» в
+  [`src/ui/constants.py`](src/ui/constants.py) сохранён без изменений
+  (user guide §2); добавлены 11 LABELS-ключей под новый flow. Покрытие:
+  [`tests/test_ui_components.py`](tests/test_ui_components.py) — 11
+  кейсов (валидация расширения/размера/None, render happy/error path,
+  PII санитайз через BL-23),
+  [`tests/test_ui_modes.py`](tests/test_ui_modes.py) — 13 кейсов
+  upload+format+download (mock `src.pipeline.run_analysis` + streamlit
+  stub),
+  [`tests/test_arm_deployment_runbook.py`](tests/test_arm_deployment_runbook.py)
+  — smoke-кейс «runbook §2.8 выполняется автоматически» (uploader →
+  format radio → run button → активный download_button после успешного
+  run).
+  [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md)
+  §2.8 — чек-лист пилотного smoke-теста (`.xlsx`/`.docx` ≤ 10 МБ → формат
+  отчёта → «🚀 Запустить анализ» → «📥 Скачать отчёт ({формат})»);
+  отдельным абзацем указано, что вернуться к старому query-style flow
+  можно через `configs/ui_config.yaml: ui.analysis_query_mode`.
 - **CODE: BL-50 `.env` startup validation (issue #194).** Добавлен
   startup-guard в новом модуле
   [`src/config_loader.py`](src/config_loader.py): `validate_env()`

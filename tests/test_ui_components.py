@@ -92,8 +92,13 @@ _ensure_streamlit_stub()
 
 from src.ui import constants  # noqa: E402
 from src.ui.components import (  # noqa: E402
+    MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
+    SUPPORTED_EXTENSIONS,
+    UploadValidationResult,
     coerce_page,
     format_dependency_summary,
+    render_analysis_uploader,
     render_chat_history,
     render_chunks,
     render_sidebar,
@@ -101,10 +106,27 @@ from src.ui.components import (  # noqa: E402
     render_upload_zone,
     section_signature,
     truncate,
+    validate_uploaded_file,
 )
+from src.ui.components import analysis_uploader  # noqa: E402
 from src.ui.components.chat_interface import (  # noqa: E402
     latest_assistant_message_index,
 )
+
+
+class _StubUpload:
+    """Minimal stand-in for Streamlit's ``UploadedFile`` for tests."""
+
+    def __init__(self, name: str, size: int = 0, data: bytes = b"") -> None:
+        self.name = name
+        self.size = size or len(data)
+        self._data = data or b"\x00" * size
+
+    def getvalue(self) -> bytes:
+        return self._data
+
+    def getbuffer(self) -> bytes:
+        return self._data
 
 
 # --------------------------------------------------------- LABELS contract --
@@ -131,7 +153,7 @@ def test_labels_dict_covers_every_required_ui_slot() -> None:
         "sidebar_collection_caption",
         "sidebar_embedding_caption",
         "sidebar_no_env_warning",
-        # analysis
+        # analysis (legacy query-style flow, BL-54 opt-in)
         "analysis_query_label",
         "analysis_query_placeholder",
         "analysis_submit_button",
@@ -140,6 +162,18 @@ def test_labels_dict_covers_every_required_ui_slot() -> None:
         "analysis_response_header",
         "analysis_response_empty",
         "analysis_prompt_expander",
+        # analysis (BL-54 upload flow, issue #196)
+        "analysis_uploader_label",
+        "analysis_uploader_help",
+        "analysis_uploader_extension_error_template",
+        "analysis_uploader_size_error_template",
+        "analysis_run_button",
+        "analysis_no_file_warning",
+        "analysis_pipeline_error_template",
+        "analysis_run_in_progress",
+        "analysis_run_success_template",
+        "analysis_download_button_template",
+        "analysis_intro_upload_info",
         # consultation
         "consultation_caption_template",
         "consultation_input_placeholder",
@@ -217,6 +251,7 @@ def test_component_package_exposes_expected_callables() -> None:
     callables = [
         coerce_page,
         format_dependency_summary,
+        render_analysis_uploader,
         render_chat_history,
         render_chunks,
         render_sidebar,
@@ -224,9 +259,119 @@ def test_component_package_exposes_expected_callables() -> None:
         render_upload_zone,
         section_signature,
         truncate,
+        validate_uploaded_file,
     ]
     for fn in callables:
         assert callable(fn), f"{fn!r} is not callable"
+
+
+# ---------------------------------- BL-54 analysis uploader (issue #196) --
+def test_analysis_uploader_supported_constants_match_issue_contract() -> None:
+    """`.xlsx` / `.docx` and a 10 МБ limit are pinned by NFR-09 + FR-01."""
+    assert SUPPORTED_EXTENSIONS == ("xlsx", "docx")
+    assert MAX_UPLOAD_SIZE_MB == 10
+    assert MAX_UPLOAD_SIZE_BYTES == 10 * 1024 * 1024
+
+
+def test_validate_uploaded_file_accepts_xlsx_under_limit() -> None:
+    file = _StubUpload("requirements.xlsx", size=1024)
+    result = validate_uploaded_file(file)
+    assert isinstance(result, UploadValidationResult)
+    assert result.ok is True
+    assert result.file is file
+    assert result.error_message is None
+
+
+def test_validate_uploaded_file_accepts_docx_under_limit() -> None:
+    file = _StubUpload("tz.docx", size=2_000_000)
+    result = validate_uploaded_file(file)
+    assert result.ok is True
+    assert result.file is file
+
+
+def test_validate_uploaded_file_rejects_csv_extension() -> None:
+    file = _StubUpload("export.csv", size=100)
+    result = validate_uploaded_file(file)
+    assert result.ok is False
+    assert result.file is None
+    assert result.error_message and ".csv" in result.error_message
+    assert ".xlsx" in result.error_message and ".docx" in result.error_message
+
+
+def test_validate_uploaded_file_rejects_files_above_10mb() -> None:
+    file = _StubUpload("huge.xlsx", size=MAX_UPLOAD_SIZE_BYTES + 1)
+    result = validate_uploaded_file(file)
+    assert result.ok is False
+    assert result.error_message and "10" in result.error_message
+
+
+def test_validate_uploaded_file_accepts_files_exactly_at_limit() -> None:
+    file = _StubUpload("edge.xlsx", size=MAX_UPLOAD_SIZE_BYTES)
+    result = validate_uploaded_file(file)
+    assert result.ok is True
+
+
+def test_validate_uploaded_file_returns_not_ok_for_none() -> None:
+    result = validate_uploaded_file(None)
+    assert result.ok is False
+    assert result.file is None
+
+
+def test_render_analysis_uploader_returns_validated_handle(monkeypatch) -> None:
+    """Happy path: a valid upload is returned to the caller untouched."""
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+
+    valid = _StubUpload("input.xlsx", size=2048)
+    monkeypatch.setattr(st, "file_uploader", lambda *_a, **_kw: valid)
+
+    captured: list[str] = []
+    monkeypatch.setattr(st, "error", lambda message: captured.append(message))
+
+    handle = render_analysis_uploader()
+
+    assert handle is valid
+    assert captured == []
+
+
+def test_render_analysis_uploader_shows_error_for_oversize_file(monkeypatch) -> None:
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+
+    too_big = _StubUpload("big.xlsx", size=MAX_UPLOAD_SIZE_BYTES + 1024)
+    monkeypatch.setattr(st, "file_uploader", lambda *_a, **_kw: too_big)
+
+    errors: list[str] = []
+    monkeypatch.setattr(st, "error", lambda message: errors.append(message))
+
+    handle = render_analysis_uploader()
+
+    assert handle is None
+    assert errors and "10" in errors[0]
+
+
+def test_render_analysis_uploader_returns_none_when_nothing_uploaded(monkeypatch) -> None:
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+
+    monkeypatch.setattr(st, "file_uploader", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "error", lambda *_a, **_kw: None)
+
+    handle = render_analysis_uploader()
+
+    assert handle is None
+
+
+def test_analysis_uploader_filename_is_sanitized_for_logs(monkeypatch) -> None:
+    """BL-54 PII clause: filenames flow through ``sanitize_log_record``."""
+    sanitized_record: dict = {}
+
+    def _spy(record, **_kwargs):
+        sanitized_record.update(record)
+        return {"message": "[SANITIZED]"}
+
+    monkeypatch.setattr(analysis_uploader, "sanitize_log_record", _spy)
+
+    safe = analysis_uploader._safe_filename_for_log("alice@example.com.xlsx")
+    assert safe == "[SANITIZED]"
+    assert sanitized_record["message"] == "alice@example.com.xlsx"
 
 
 def test_latest_assistant_message_index_handles_empty_history() -> None:

@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,109 @@ def test_runbook_mentions_bl50_startup_guard() -> None:
     assert "BL-50" in text
     assert "startup-guard" in text or "startup guard" in text
     assert ".env.txt" in text
+
+
+def test_runbook_documents_bl54_upload_smoke_section() -> None:
+    """BL-54 (issue #196): the runbook must describe §2.8 file uploader smoke."""
+    text = _read(RUNBOOK)
+
+    required = [
+        "2.8",
+        "BL-54",
+        "📎 Файл тендерного ТЗ",
+        "🚀 Запустить анализ",
+        "📥 Скачать отчёт",
+        "analysis_query_mode",
+    ]
+    for fragment in required:
+        assert fragment in text, f"runbook missing BL-54 fragment: {fragment}"
+
+
+def test_runbook_section_2_8_executes_automatically(monkeypatch) -> None:
+    """Smoke case: BL-54 runbook §2.8 is automatically verifiable.
+
+    Mirrors the manual checklist (uploader visible, format radio
+    rendered, run button rendered, download button activates after a
+    pipeline run) by driving ``_run_analysis_upload_mode`` against the
+    streamlit stub from ``tests.test_ui_modes``.
+    """
+    # Re-use the streamlit stub bootstrapped by tests/test_ui_modes.py — it
+    # already provides every widget the upload flow touches.
+    sys.path.insert(0, str(ROOT))
+    import tests.test_ui_modes as ui_modes_tests
+    from src.ui import app
+    import streamlit as st
+
+    st.session_state.clear()
+    uploaded = ui_modes_tests._StubUpload("tz.xlsx", data=b"requirements")
+
+    recorded = {
+        "file_uploader": [],
+        "radio": [],
+        "button": [],
+        "download_button": [],
+    }
+    monkeypatch.setattr(
+        st,
+        "file_uploader",
+        lambda *args, **kwargs: (
+            recorded["file_uploader"].append((args, kwargs)) or uploaded
+        ),
+    )
+
+    def _radio(*args, **kwargs):
+        recorded["radio"].append((args, kwargs))
+        st.session_state[kwargs.get("key", "")] = "xlsx"
+        return "xlsx"
+
+    monkeypatch.setattr(st, "radio", _radio)
+    monkeypatch.setattr(st, "info", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "success", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "warning", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "error", lambda *_a, **_kw: None)
+
+    # Pretend the user clicked the run button on this render pass.
+    button_calls: list = []
+
+    def _button(*args, **kwargs):
+        button_calls.append((args, kwargs))
+        return len(button_calls) == 1
+
+    monkeypatch.setattr(st, "button", _button)
+
+    def _execute(file, *, output_format):
+        st.session_state[app.SESSION_ANALYSIS_LAST_RUN_KEY] = {
+            "run_id": "smoke-run",
+            "filename": "tz__result_smoke-run.xlsx",
+            "report_bytes": b"smoke-report",
+            "stats": {"total": 1, "success": 1, "errors": 0, "nd": 0},
+            "format": output_format,
+            "duration_seconds": 1.0,
+        }
+
+    monkeypatch.setattr(app, "_execute_analysis_pipeline", _execute)
+    monkeypatch.setattr(
+        st,
+        "download_button",
+        lambda *args, **kwargs: recorded["download_button"].append((args, kwargs)),
+    )
+
+    app._run_analysis_upload_mode()
+
+    # §2.8 expectations: file uploader visible.
+    assert recorded["file_uploader"], "runbook §2.8: uploader must render"
+    uploader_args, _ = recorded["file_uploader"][0]
+    assert uploader_args[0] == "📎 Файл тендерного ТЗ"
+    # §2.8 expectations: format radio rendered.
+    assert recorded["radio"], "runbook §2.8: format radio must render"
+    # §2.8 expectations: run button rendered.
+    run_button_args = [c for c in button_calls if c[0][0] == "🚀 Запустить анализ"]
+    assert run_button_args, "runbook §2.8: «🚀 Запустить анализ» must render"
+    # §2.8 expectations: download активен after a successful run.
+    assert recorded["download_button"], "runbook §2.8: download must render"
+    download_kwargs = recorded["download_button"][0][1]
+    assert download_kwargs["disabled"] is False
+    assert download_kwargs["file_name"].endswith(".xlsx")
 
 
 def test_startup_guard_recreates_env_from_example_after_deletion(
