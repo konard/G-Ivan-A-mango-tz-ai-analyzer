@@ -121,6 +121,8 @@ def test_labels_dict_covers_every_required_ui_slot() -> None:
         "sidebar_debug_help",
         "sidebar_topk_label",
         "sidebar_topk_help",
+        "sidebar_topk_info_expander",
+        "sidebar_topk_warning_template",
         "sidebar_clear_history_button",
         "sidebar_clear_history_help",
         "sidebar_history_caption",
@@ -282,3 +284,147 @@ def test_section_signature_prefers_number_and_title() -> None:
 
 def test_section_signature_returns_empty_when_no_metadata() -> None:
     assert section_signature({}) == ""
+
+
+# ----------------------------------------------- BL-48.6 retrieval settings --
+def test_resolve_retrieval_settings_reads_full_config() -> None:
+    from src.ui.components.mode_selector import resolve_retrieval_settings
+
+    config = {
+        "ui": {
+            "retrieval": {
+                "top_k_min": 1,
+                "top_k_max": 20,
+                "top_k_default": 5,
+                "top_k_production_max": 10,
+                "top_k_label": "Глубина поиска по документации",
+                "top_k_help": "help-line",
+                "top_k_tooltip": "tooltip-body",
+                "top_k_warning_template": "warn>{limit}",
+            }
+        }
+    }
+    settings = resolve_retrieval_settings(config)
+    assert settings["top_k_min"] == 1
+    assert settings["top_k_max"] == 20
+    assert settings["top_k_default"] == 5
+    assert settings["top_k_production_max"] == 10
+    assert settings["label"] == "Глубина поиска по документации"
+    assert settings["help"] == "help-line"
+    assert settings["tooltip"] == "tooltip-body"
+    assert settings["warning_template"] == "warn>{limit}"
+
+
+def test_resolve_retrieval_settings_uses_defaults_for_empty_config() -> None:
+    from src.ui.components.mode_selector import (
+        DEFAULT_TOP_K,
+        DEFAULT_TOP_K_MAX,
+        DEFAULT_TOP_K_MIN,
+        DEFAULT_TOP_K_PRODUCTION_MAX,
+        resolve_retrieval_settings,
+    )
+
+    for cfg in ({}, {"ui": {}}, {"ui": {"retrieval": "not-a-dict"}}, None):
+        settings = resolve_retrieval_settings(cfg)
+        assert settings["top_k_min"] == DEFAULT_TOP_K_MIN
+        assert settings["top_k_max"] == DEFAULT_TOP_K_MAX
+        assert settings["top_k_default"] == DEFAULT_TOP_K
+        assert settings["top_k_production_max"] == DEFAULT_TOP_K_PRODUCTION_MAX
+        assert settings["label"]
+        assert settings["warning_template"]
+
+
+def test_resolve_retrieval_settings_clamps_default_within_range() -> None:
+    """Default is clamped to ``[min, max]`` so a misconfigured value can't crash the slider."""
+    from src.ui.components.mode_selector import resolve_retrieval_settings
+
+    settings = resolve_retrieval_settings(
+        {"ui": {"retrieval": {"top_k_min": 5, "top_k_max": 8, "top_k_default": 50}}}
+    )
+    assert settings["top_k_default"] == 8
+
+    settings_low = resolve_retrieval_settings(
+        {"ui": {"retrieval": {"top_k_min": 3, "top_k_max": 8, "top_k_default": "broken"}}}
+    )
+    # Coerce failure falls back to module default (5) which sits inside [3, 8].
+    assert settings_low["top_k_default"] == 5
+
+
+def test_resolve_retrieval_settings_ignores_malformed_max_lower_than_min() -> None:
+    from src.ui.components.mode_selector import resolve_retrieval_settings
+
+    settings = resolve_retrieval_settings(
+        {"ui": {"retrieval": {"top_k_min": 4, "top_k_max": 2, "top_k_default": 3}}}
+    )
+    assert settings["top_k_max"] >= settings["top_k_min"]
+    assert settings["top_k_default"] >= settings["top_k_min"]
+
+
+def test_render_top_k_warning_triggers_above_production_max(monkeypatch) -> None:
+    """Values above ``top_k_production_max`` must render a Streamlit warning."""
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+    from src.ui.components import mode_selector
+
+    captured: list[str] = []
+    monkeypatch.setattr(st, "warning", lambda message: captured.append(message))
+
+    settings = {
+        "top_k_production_max": 10,
+        "warning_template": "⚠️ > {limit}",
+    }
+    mode_selector._render_top_k_warning(11, settings)
+    mode_selector._render_top_k_warning(10, settings)
+    mode_selector._render_top_k_warning(20, settings)
+
+    assert captured == ["⚠️ > 10", "⚠️ > 10"]
+
+
+def test_render_top_k_warning_skips_when_threshold_disabled(monkeypatch) -> None:
+    import streamlit as st  # noqa: WPS433 — stub injected at import time
+    from src.ui.components import mode_selector
+
+    captured: list[str] = []
+    monkeypatch.setattr(st, "warning", lambda message: captured.append(message))
+
+    mode_selector._render_top_k_warning(
+        20, {"top_k_production_max": 0, "warning_template": "x"}
+    )
+    assert captured == []
+
+
+def test_top_k_tooltip_mentions_every_required_phrase() -> None:
+    """The shipped tooltip must satisfy the BL-48.6 contract verbatim."""
+    import yaml
+
+    cfg = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "configs" / "ui_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    tooltip = str(cfg["ui"]["retrieval"]["top_k_tooltip"])
+    # BL-48.6 DoD: tooltip must call out "для КАЖДОГО требования" and explain
+    # the under-fill behaviour and give a numeric recommendation.
+    assert "КАЖДОГО" in tooltip
+    assert "не создавая искусственных" in tooltip
+    assert "Рекомендация" in tooltip
+    # Label must follow business terminology — no «чанк» word stays anywhere.
+    assert "чанк" not in cfg["ui"]["retrieval"]["top_k_label"].lower()
+
+
+def test_ui_config_retrieval_section_is_complete() -> None:
+    """The shipped config must define every BL-48.6 key — defaults are a safety net only."""
+    import yaml
+
+    cfg = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "configs" / "ui_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    retrieval = cfg["ui"]["retrieval"]
+    assert retrieval["top_k_min"] == 1
+    assert retrieval["top_k_max"] == 20
+    assert retrieval["top_k_default"] == 5
+    assert retrieval["top_k_production_max"] == 10
+    assert retrieval["top_k_label"].strip()
+    assert retrieval["top_k_tooltip"].strip()
+    assert "{limit}" in retrieval["top_k_warning_template"]

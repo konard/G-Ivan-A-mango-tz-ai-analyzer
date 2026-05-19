@@ -4,6 +4,10 @@ BL-41 (issue #168) extracts the sidebar layout from ``src.ui.app`` into a
 single component. The function still returns the same ``{mode, debug, top_k,
 clear_history}`` dictionary so ``src.ui.app.main`` can keep its orchestration
 flow unchanged.
+
+BL-48.6 (issue #184): the «глубина поиска» slider reads its label, tooltip,
+range and production warning from ``configs/ui_config.yaml`` so business-facing
+copy and limits can be tweaked without code changes.
 """
 
 from __future__ import annotations
@@ -23,6 +27,86 @@ from src.ui.constants import (
 )
 
 DEFAULT_TOP_K = 5
+DEFAULT_TOP_K_MIN = 1
+DEFAULT_TOP_K_MAX = 20
+DEFAULT_TOP_K_PRODUCTION_MAX = 10
+
+
+def _clamp_int(value: Any, fallback: int, *, minimum: int = 1) -> int:
+    """Return ``value`` coerced to int and clamped to ``>= minimum``."""
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(minimum, coerced)
+
+
+def resolve_retrieval_settings(
+    ui_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Read the BL-48.6 retrieval slider settings from ``ui_config.yaml``.
+
+    The loader is forgiving on purpose: missing keys, the wrong type, or a
+    completely empty config never break the sidebar — defaults are applied
+    silently so the UI keeps working even with a half-migrated config file.
+    """
+    cfg = ui_config or {}
+    ui_section = cfg.get("ui") if isinstance(cfg, dict) else None
+    retrieval = ui_section.get("retrieval") if isinstance(ui_section, dict) else None
+    if not isinstance(retrieval, dict):
+        retrieval = {}
+
+    top_k_min = _clamp_int(retrieval.get("top_k_min"), DEFAULT_TOP_K_MIN, minimum=1)
+    top_k_max = _clamp_int(
+        retrieval.get("top_k_max"), DEFAULT_TOP_K_MAX, minimum=top_k_min
+    )
+    if top_k_max < top_k_min:
+        top_k_max = top_k_min
+    top_k_default = _clamp_int(
+        retrieval.get("top_k_default"), DEFAULT_TOP_K, minimum=top_k_min
+    )
+    top_k_default = min(top_k_default, top_k_max)
+    top_k_production_max = _clamp_int(
+        retrieval.get("top_k_production_max"),
+        DEFAULT_TOP_K_PRODUCTION_MAX,
+        minimum=top_k_min,
+    )
+    top_k_production_max = min(top_k_production_max, top_k_max)
+
+    label = str(retrieval.get("top_k_label") or LABELS["sidebar_topk_label"])
+    help_text = str(retrieval.get("top_k_help") or LABELS["sidebar_topk_help"])
+    tooltip = str(retrieval.get("top_k_tooltip") or "").strip()
+    warning_template = str(
+        retrieval.get("top_k_warning_template")
+        or LABELS["sidebar_topk_warning_template"]
+    )
+
+    return {
+        "top_k_min": top_k_min,
+        "top_k_max": top_k_max,
+        "top_k_default": top_k_default,
+        "top_k_production_max": top_k_production_max,
+        "label": label,
+        "help": help_text,
+        "tooltip": tooltip,
+        "warning_template": warning_template,
+    }
+
+
+def _render_top_k_warning(value: int, settings: Dict[str, Any]) -> None:
+    """Show an inline warning when the user crosses the production-safe limit."""
+    threshold = int(settings.get("top_k_production_max") or 0)
+    if threshold <= 0 or value <= threshold:
+        return
+    template = str(
+        settings.get("warning_template")
+        or LABELS["sidebar_topk_warning_template"]
+    )
+    try:
+        message = template.format(limit=threshold, value=value)
+    except (KeyError, IndexError):
+        message = template
+    st.warning(message)
 
 
 def render_sidebar(
@@ -30,12 +114,20 @@ def render_sidebar(
     *,
     max_history_messages: int,
     env_path: Optional[Path] = None,
+    retrieval_settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Render the Streamlit sidebar and return user choices.
 
     ``env_path`` is passed in so the sidebar can warn when ``.env`` is missing
     without re-importing module-level constants from ``src.ui.app``.
+    ``retrieval_settings`` is the resolved BL-48.6 slider config; when omitted
+    the function falls back to safe defaults so old callers keep working.
     """
+    slider_cfg = retrieval_settings or resolve_retrieval_settings()
+    tooltip = str(slider_cfg.get("tooltip") or "").strip()
+    help_text = str(slider_cfg.get("help") or LABELS["sidebar_topk_help"])
+    slider_help = f"{help_text}\n\n{tooltip}" if tooltip else help_text
+
     with st.sidebar:
         st.header(LABELS["sidebar_header"])
 
@@ -63,12 +155,16 @@ def render_sidebar(
         )
 
         top_k = st.slider(
-            LABELS["sidebar_topk_label"],
-            min_value=1,
-            max_value=10,
-            value=DEFAULT_TOP_K,
-            help=LABELS["sidebar_topk_help"],
+            str(slider_cfg.get("label") or LABELS["sidebar_topk_label"]),
+            min_value=int(slider_cfg["top_k_min"]),
+            max_value=int(slider_cfg["top_k_max"]),
+            value=int(slider_cfg["top_k_default"]),
+            help=slider_help,
         )
+        if tooltip:
+            with st.expander(LABELS["sidebar_topk_info_expander"], expanded=False):
+                st.markdown(tooltip)
+        _render_top_k_warning(int(top_k), slider_cfg)
 
         clear_history = False
         if mode == MODE_CONSULTATION:

@@ -6,6 +6,34 @@
 
 ## [Unreleased]
 
+### UI
+- **UI: BL-48.6 business-friendly retrieval parameter naming & expanded
+  top_k range (issue #184).** Слайдер «Сколько чанков извлекать» в сайдбаре
+  Streamlit-UI заменён на бизнес-формулировку **«Макс. число источников для
+  проверки»** с info-блоком, где явно описано поведение системы: для
+  КАЖДОГО атомарного требования ищется до N релевантных разделов
+  документации, при недостатке совпадений возвращаются только фактические
+  результаты (никакого padding'а). Диапазон расширен с `1–10` до `1–20`
+  (default = 5, production-safe лимит = 10): значения выше production-лимита
+  подсвечиваются предупреждением о возможном росте латентности и расхода
+  токенов (NFR-03). Вся пользовательская копия и лимиты вынесены в новую
+  секцию `ui.retrieval` файла `configs/ui_config.yaml` (`top_k_min`,
+  `top_k_max`, `top_k_default`, `top_k_production_max`, `top_k_label`,
+  `top_k_help`, `top_k_tooltip`, `top_k_warning_template`); компонент
+  `src/ui/components/mode_selector.py` читает их через
+  `resolve_retrieval_settings()`, оркестратор `src/ui/app.py` пробрасывает
+  настройки в сайдбар через `get_retrieval_settings()` — никаких
+  захардкоженных значений и текстов в `src/ui/` не осталось. Резолвер
+  устойчив к битому конфигу (пропущенные/некорректные ключи → фоллбек на
+  модульные дефолты; `top_k_default` зажимается к `[top_k_min, top_k_max]`).
+  Покрытие: `tests/test_ui_components.py` — контракт LABELS пополнен ключами
+  `sidebar_topk_info_expander` / `sidebar_topk_warning_template`, добавлены
+  тесты резолвера (полный конфиг, пустой конфиг, мусорные значения, clamp
+  default'а, warning above/below production-max, проверка shipped tooltip и
+  YAML на наличие всех BL-48.6 ключей и отсутствие слова «чанк» в label);
+  `tests/test_ui_modes.py` — добавлен smoke на `app.get_retrieval_settings()`
+  и проброс настроек через `app.render_sidebar(... retrieval_settings=...)`.
+
 ### Research
 - **RESEARCH: BL-47 ARM installer & cloud access feasibility study (issue #180).**
   Опубликован отчёт
