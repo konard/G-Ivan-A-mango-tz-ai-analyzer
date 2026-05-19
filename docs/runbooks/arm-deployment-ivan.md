@@ -2,6 +2,37 @@
 
 Инструкция описывает установку и отладку `clarify-engine-ai` на АРМ Ивана Гулиенко. Целевая среда: Windows 10/11 с русской локалью, Windows CMD (`cmd.exe`), Python 3.14 через `py` launcher, CPU-only Ollama и рабочий каталог `C:\Projects\clarify-engine-ai`.
 
+## 0. Quick-start через Installer L1
+
+Для первой установки вместо ручного выполнения команд из раздела 2 можно
+запустить wizard из корня проекта:
+
+```cmd
+scripts\install\clarify-setup.cmd
+```
+
+Wizard выполняет шаги `[1/8]..[8/8]`: проверяет среду, создаёт runtime
+директории, поднимает `venv`, создаёт `.env` из `.env.example`, проверяет
+Ollama и модель `qwen2.5:7b`, запускает smoke import, создаёт ярлыки и
+показывает итоговый URL `http://localhost:8501`. Повторный запуск
+идемпотентен: существующие `.env`, `logs/`, `chroma_data/`,
+`data/incoming/` и `data/output/` не перезаписываются.
+
+Если рядом с проектом найден `.env.txt`, но отсутствует `.env`, wizard
+останавливается и просит вручную выполнить:
+
+```cmd
+ren .env.txt .env
+```
+
+Загрузка модели через `ollama pull qwen2.5:7b` выполняется только после
+явного подтверждения. Лог установки пишется в `logs\install.jsonl`; секреты
+из `.env` туда не попадают. Для проверки без тяжёлых команд доступен режим:
+
+```cmd
+scripts\install\clarify-setup.cmd --dry-run
+```
+
 ## 1. Предварительные требования
 
 Проверьте, что установлены Git for Windows, Python 3.14, Ollama for Windows и доступ к GitHub-репозиторию. Все команды ниже выполняются только в Windows CMD, не в PowerShell, WSL или Git Bash.
@@ -35,6 +66,28 @@ chcp 65001
 Файлы `.env`, `.yaml` и `.md` сохраняйте как UTF-8 без BOM. Это снижает риск `UnicodeDecodeError` на Windows с системной кодировкой cp1251.
 
 > ⚠️ **Notepad на Windows скрывает расширение.** Если «Сохранить как» не переключить в `All Files (*.*)`, файл уходит на диск как `.env.txt`. С BL-50 (issue #194) startup-guard скажет вам об этом автоматически: при старте `streamlit run src/ui/app.py` или `python -m src.pipeline` появится сообщение «Обнаружен файл .env.txt» с готовой командой `ren .env.txt .env`. Никакого silent rename — переименование подтверждаете вы сами.
+
+### 1.4a. Добавьте Ollama в PATH (BL-51)
+
+Инсталлятор Ollama for Windows кладёт `ollama.exe` в `%LOCALAPPDATA%\Programs\Ollama`, но **не добавляет этот путь в системный PATH**. Без правки PATH команды `ollama serve`, `ollama pull qwen2.5:7b` и `ollama --version` в свежей CMD-сессии падают с `'ollama' is not recognized as an internal or external command`.
+
+Добавьте Ollama в пользовательский PATH одной командой:
+
+```cmd
+setx PATH "%PATH%;%LOCALAPPDATA%\Programs\Ollama"
+```
+
+> ⚠️ **`setx` не меняет PATH в уже открытом окне CMD.** **Закройте текущее окно CMD и откройте новое** — иначе `ollama --version` всё ещё будет ошибкой. Это поведение Windows, а не дефект Ollama.
+
+Проверьте, что `ollama` доступна без полного пути:
+
+```cmd
+where ollama
+```
+
+Ожидаемый вывод — строка вида `C:\Users\<you>\AppData\Local\Programs\Ollama\ollama.exe`. Если `where` отвечает `INFO: Could not find files for the given pattern(s)`, повторите `setx` или перезагрузите Windows.
+
+`OllamaProvider` со стороны Python тоже сам определяет путь через `shutil.which("ollama")` с fallback на `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` и `C:\Program Files\Ollama\ollama.exe` (см. `src/llm/client.py::_resolve_ollama_executable`). Найденный путь логируется один раз при старте провайдера. Если ни PATH, ни стандартные пути не сработали, в логе появится подсказка с командой `setx PATH ...` — это и есть BL-51 guard.
 
 ## 2. Сценарий А: чистая установка
 
@@ -278,7 +331,8 @@ ui:
 | `Read timed out` | CPU-only Ollama не успела ответить или модель не прогрета | Выполнить `ollama run qwen2.5:7b "Готов"` и установить `set OLLAMA_TIMEOUT=180` |
 | `UnicodeDecodeError` | YAML или `.env` сохранен в cp1251 или с некорректной BOM | Пересохранить файл как UTF-8 без BOM, затем перезапустить CMD и UI |
 | `No module named 'torchvision'` | Не установлена optional vision-зависимость | Выполнить `py -m pip install --no-cache-dir torchvision>=0.18.0` |
-| `Connection refused` или `Ollama is unreachable` | Не запущен daemon Ollama | Запустить отдельное окно CMD с `ollama serve` |
+| `Connection refused` или `Ollama is unreachable` | Не запущен daemon Ollama **или** `ollama.exe` не в PATH | Запустить отдельное окно CMD с `ollama serve`; если команда `ollama` не найдена — пройти §1.4a (BL-51 guard: `setx PATH "%PATH%;%LOCALAPPDATA%\Programs\Ollama"` + перезапуск CMD) |
+| `Не удалось найти исполняемый файл Ollama` | BL-51 guard не нашёл `ollama.exe` ни в PATH, ни по стандартным путям | Установить Ollama for Windows и выполнить §1.4a (`setx PATH ...` + перезапуск CMD) |
 | `${VAR:default}` не подставляется как ожидалось | Переменная окружения не задана в текущем окне CMD | Временно задать прямое значение через `set VAR=value` или прописать значение в `.env` |
 | `ModuleNotFoundError: src` | Не задан `PYTHONPATH` перед запуском UI | Выполнить `set PYTHONPATH=C:\Projects\clarify-engine-ai` |
 | `Обнаружен файл .env.txt` | Notepad сохранил файл как `.env.txt` вместо `.env` | Выполнить `ren .env.txt .env` (см. BL-50, issue #194); guard остановит запуск, пока имя не исправлено |
