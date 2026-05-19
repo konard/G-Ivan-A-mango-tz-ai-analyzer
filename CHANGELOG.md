@@ -6,6 +6,35 @@
 
 ## [Unreleased]
 
+### Documentation
+- **DOCUMENTATION: issue #182 — ARM pilot test fixes backlog branch + v1.5 sync.**
+  По результатам пилотного тестирования на АРМ пользователя ([@G-Ivan-A](https://github.com/G-Ivan-A))
+  сформирована отдельная ветка бэклога
+  [`docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md`](docs/backlog/2026-05-20_backlog_arm-pilot-test-fixes_v1.md)
+  с 7 задачами BL-50..BL-56 (P0/P1/P2), покрывающими все 7 пунктов отчёта
+  тестера: BL-50 (`.env` startup validation, P0), BL-51 (Auto-detect Ollama
+  path на Windows, P1), BL-52 (Sync `.env.example` ↔ runbook `OLLAMA_MODEL`,
+  P0), BL-53 (Streamlit `.env` cache documentation, P2), **BL-54 (Restore
+  file uploader в режиме «📊 Анализ ТЗ», P0 — критический регресс BL-41
+  относительно user guide и runbook)**, BL-55 (First-response UX на холодном
+  Ollama, P2), BL-56 (`datetime.utcnow()` → timezone-aware Python 3.14, P2).
+  Цель ветки — устранить все проблемы пилотного тестирования и достичь
+  ожидаемого поведения системы согласно
+  [`docs/user_guide/02_interface_elements.md`](docs/user_guide/02_interface_elements.md)
+  и [`docs/runbooks/arm-deployment-ivan.md`](docs/runbooks/arm-deployment-ivan.md).
+  Сквозная нумерация V-10 сохранена (BL-48/BL-49 зарезервированы BL-47
+  research; следующий свободный ID после v1.5 — **BL-57**). Основной реестр
+  [`docs/backlog/2026-05-17_backlog_rag-optimization_v1.5.md`](docs/backlog/2026-05-17_backlog_rag-optimization_v1.5.md)
+  обновлён: §0.6 содержит BL-50..BL-56 со статусом `📝 New`, §14 ссылается
+  на отдельную ветку, BL-46 и BL-47 переведены в `✅ Closed` (артефакты v1.4
+  и BL-47 research note существуют), §13 History дополнен записью v1.5.
+  Кодовые изменения и обновления связанной документации (`src/`, `.env.example`,
+  `docs/runbooks/`, `docs/user_guide/`) стартуют **только после Accepted-ревью
+  Product Owner** отдельной ветки. План релизов: hot-fix-вход (BL-50, BL-52,
+  BL-54) → Sprint 4 (BL-51, BL-55) → Sprint 5 (BL-53, BL-56) с явной
+  координацией с BL-48 ARM Installer (BL-50..BL-53 — runtime guards, которые
+  переиспользует installer wizard).
+
 ### Research
 - **RESEARCH: BL-47 ARM installer & cloud access feasibility study (issue #180).**
   Опубликован отчёт
