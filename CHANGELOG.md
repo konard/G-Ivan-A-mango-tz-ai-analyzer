@@ -10,6 +10,10 @@
 - **BREAKING (KB schema, BL-32, issue #152):** Документация и конфиг синхронизированы с окном `chunk_size=512`, `chunk_overlap=64`, guardrails `[384, 768]`. Для индексов, созданных на старом окне `256/32` или `250/50`, требуется полная переиндексация KB перед сравнением retrieval-метрик.
 
 ### Fixed
+- **PATCH: BL-34-F drift cleanup & audit recommendations (issue #162).**
+  Clarified ADR numbering/export-channel docs, added the CONCEPT pre-deploy
+  invariant for Concept/Pivot ADRs, and emitted structured
+  `PIPELINE_START` / `PIPELINE_END` audit events.
 - **PATCH: Code Review triage hardening (BL-26, issue #142).**
   Added the code-review triage matrix, made `strict_embedder: true` explicit
   while allowing an audited hash fallback only for `strict_embedder: false`,

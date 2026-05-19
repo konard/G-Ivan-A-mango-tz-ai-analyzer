@@ -11,7 +11,7 @@ Three responsibilities live here:
 1. Resolving ``(name, version)`` to a file on disk and reading it once.
 2. Computing a SHA-256 hash of the raw bytes so that every classification /
    RAG run can be tied back to the exact prompt revision that was used
-   (BL-23 audit trail, see ``docs/ADR/002-prompt-management.md``).
+   (BL-23 audit trail, see ``docs/ADR/004-prompt-management.md``).
 3. Emitting a structured ``INFO`` log record at load time — when callers
    supply ``run_id`` it is propagated via the ``extra`` mapping so the
    existing JSON logging configuration (``src/pipeline.py``) groups the

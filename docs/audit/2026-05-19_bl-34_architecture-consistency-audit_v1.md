@@ -251,7 +251,7 @@ Point-in-time аудит срезы кода `912612b` подтверждает,
 
 1. **PO-ревью:** Передать отчёт PO для согласования вердикта (✅ Деплой разрешён) и приоритизации рекомендаций.
 2. **CHANGELOG.md:** При следующем релизе добавить в `[Unreleased]` строку: «BL-34: Architecture Consistency Audit — see `docs/audit/2026-05-19_bl-34_architecture-consistency-audit_v1.md`.» (вне периметра данного аудита — изменение README/CHANGELOG требует отдельного PR).
-3. **BL-34-F:** При желании PO — открыть Issue для группы DOC-01..ARCH-01 как single-PR cleanup (опционально, не блокирует).
+3. **BL-34-F:** Реализация рекомендаций вынесена в [PR #163](https://github.com/G-Ivan-A/clarify-engine-ai/pull/163) по issue [#162](https://github.com/G-Ivan-A/clarify-engine-ai/issues/162).
 4. **Архивирование:** Файл аудита хранится в `docs/audit/` как часть постоянного реестра pre-deploy audits.
 
 ---

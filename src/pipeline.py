@@ -23,6 +23,7 @@ import csv
 import json
 import logging
 import sys
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -232,7 +233,17 @@ def run_analysis(
     """Run the full analysis pipeline on a single ТЗ file."""
     run_id = run_id or uuid.uuid4().hex
     configure_json_logging(run_id=run_id)
-    logger.info("Pipeline started: input=%s output=%s", input_file, output_file)
+    started_at = time.perf_counter()
+    logger.info(
+        "Pipeline started: input=%s output=%s",
+        input_file,
+        output_file,
+        extra={
+            "event": "PIPELINE_START",
+            "input_file": input_file,
+            "output_file": output_file,
+        },
+    )
 
     requirements = load_requirements_by_extension(input_file, run_id=run_id)
 
@@ -329,6 +340,14 @@ def run_analysis(
         stats.success,
         stats.errors,
         stats.nd,
+        extra={
+            "event": "PIPELINE_END",
+            "total_requirements": stats.total,
+            "success_count": stats.success,
+            "error_count": stats.errors,
+            "nd_count": stats.nd,
+            "total_latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        },
     )
     return stats
 

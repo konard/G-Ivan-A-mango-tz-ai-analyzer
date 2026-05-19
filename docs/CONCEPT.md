@@ -426,6 +426,12 @@ ui:
 [`docs/backlog/2026-05-17_backlog_rag-optimization_v1.md`](backlog/2026-05-17_backlog_rag-optimization_v1.md))
 сохраняет приоритет; кодовые изменения по ADR-003 не выполняются.
 
+**Pre-deploy invariant:** [ADR-003](ADR/003-multi-agent-orchestration-draft.md)
+остаётся в статусе `Concept`, а
+[ADR-007 canonical cache](ADR/007-canonical-cache-draft.md) — в статусе
+`Pivot`. Любые изменения в `src/`, использующие концепции multi-agent
+orchestration или canonical cache, требуют отдельного ADR-апдейта до merge.
+
 #### 8.1.3. Масштабирование (6–8 недель)
 **Цель:** Production-готовая система для 50–200 пользователей.
 

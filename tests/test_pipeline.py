@@ -191,6 +191,15 @@ def test_run_analysis_propagates_run_id_to_logs_stats_and_export(
         else:
             assert entry.get("run_id") == fixed_run_id, entry
 
+    events = {entry.get("event"): entry for entry in parsed_lines if entry.get("event")}
+    assert events["PIPELINE_START"]["input_file"] == str(input_file)
+    assert events["PIPELINE_START"]["output_file"] == str(output_file)
+    assert events["PIPELINE_END"]["total_requirements"] == 2
+    assert events["PIPELINE_END"]["success_count"] == 2
+    assert events["PIPELINE_END"]["error_count"] == 0
+    assert events["PIPELINE_END"]["nd_count"] == 0
+    assert events["PIPELINE_END"]["total_latency_ms"] >= 0
+
     # 3. Excel export contains a [RunID] column with the same value on every row.
     df = pd.read_excel(output_file)
     assert "[RunID]" in df.columns
