@@ -41,6 +41,8 @@ SESSION_PENDING_MODE_KEY = "pending_mode"
 SESSION_PENDING_RUN_ID_KEY = "pending_run_id"
 SESSION_LAST_ANALYSIS_RESULT_KEY = "last_analysis_result"
 SESSION_EXPORT_FORMAT_KEY = "analysis_export_format"
+# BL-54 (issue #196): state slot for the file-upload pipeline result.
+SESSION_ANALYSIS_LAST_RUN_KEY = "analysis_last_run"
 
 # --------------------------------------------------------- export meta --
 EXPORT_FORMAT_LABELS: Dict[str, str] = {
@@ -120,7 +122,36 @@ LABELS: Dict[str, str] = {
         "`.env` не найден в корне репозитория — скопируйте `.env.example` "
         "в `.env` и заполните ключи API для вызовов LLM."
     ),
-    # Analysis mode
+    # Analysis mode (BL-54, issue #196): file-upload pipeline flow.
+    "analysis_uploader_label": "📎 Файл тендерного ТЗ",
+    "analysis_uploader_help": (
+        "Поддерживаются Excel (.xlsx) и Word (.docx) файлы. Максимальный "
+        "размер — 10 МБ (NFR-09)."
+    ),
+    "analysis_uploader_extension_error_template": (
+        "Неподдерживаемый формат: {extension}. Допустимые форматы: {allowed}."
+    ),
+    "analysis_uploader_size_error_template": (
+        "Файл превышает лимит {limit_mb} МБ (размер: {actual_mb:.1f} МБ)."
+    ),
+    "analysis_run_button": "🚀 Запустить анализ",
+    "analysis_no_file_warning": "Сначала загрузите файл ТЗ.",
+    "analysis_pipeline_error_template": "Не удалось выполнить анализ: {error}",
+    "analysis_run_in_progress": (
+        "Идёт анализ требований… NFR-03: ≤ 15 мин на CPU-only."
+    ),
+    "analysis_run_success_template": (
+        "Анализ завершён за {duration_seconds:.1f} с (run_id `{run_id}`). "
+        "Всего: {total}, успешно: {success}, ошибки: {errors}, НД: {nd}."
+    ),
+    "analysis_download_button_template": "📥 Скачать отчёт ({label})",
+    "analysis_intro_upload_info": (
+        "Загрузите файл ТЗ (`.xlsx`/`.docx`, ≤ 10 МБ), выберите формат отчёта "
+        "и нажмите **🚀 Запустить анализ**, чтобы получить результат с "
+        "колонками `[Статус]`, `[Комментарий]`, `[Confidence]`, `[RunID]`."
+    ),
+    # BL-54: legacy query-style flow stays behind the ``ui.analysis_query_mode``
+    # feature flag so BL-43 E2E callers can opt back in if needed.
     "analysis_query_label": "Запрос к базе знаний",
     "analysis_query_placeholder": (
         "Сформулируйте вопрос или вставьте требование из ТЗ…"

@@ -9,6 +9,14 @@ data structures the orchestrator passes in.
 
 from __future__ import annotations
 
+from src.ui.components.analysis_uploader import (
+    MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
+    SUPPORTED_EXTENSIONS,
+    UploadValidationResult,
+    render_analysis_uploader,
+    validate_uploaded_file,
+)
 from src.ui.components.chat_interface import (
     render_chat_history,
 )
@@ -24,8 +32,13 @@ from src.ui.components.results_viewer import (
 from src.ui.components.upload_zone import render_upload_zone
 
 __all__ = [
+    "MAX_UPLOAD_SIZE_BYTES",
+    "MAX_UPLOAD_SIZE_MB",
+    "SUPPORTED_EXTENSIONS",
+    "UploadValidationResult",
     "coerce_page",
     "format_dependency_summary",
+    "render_analysis_uploader",
     "render_chat_history",
     "render_chunks",
     "render_sidebar",
@@ -33,4 +46,5 @@ __all__ = [
     "render_upload_zone",
     "section_signature",
     "truncate",
+    "validate_uploaded_file",
 ]
