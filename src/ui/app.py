@@ -34,6 +34,7 @@ from uuid import uuid4
 import streamlit as st
 import yaml
 
+from src.config_loader import EnvValidationError, validate_env
 from src.ui.components.chat_interface import (
     latest_assistant_message_index as _latest_assistant_message_index_impl,
     render_chat_history,
@@ -948,7 +949,12 @@ def _store_generation_error(
 
 # ---------------------------------------------------------------------- main --
 def main() -> None:
-    load_dotenv(ENV_PATH, override=False)
+    try:
+        validate_env(project_root=PROJECT_ROOT)
+    except EnvValidationError as exc:
+        st.error(str(exc))
+        st.stop()
+        return
 
     st.title(LABELS["page_title"])
     st.caption(LABELS["page_subtitle"])

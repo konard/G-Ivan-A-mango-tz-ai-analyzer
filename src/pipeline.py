@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.config_loader import EnvValidationError, validate_env
 from src.exporters import ExportRouter
 from src.llm.client import LLMClient, LLMError
 from src.llm.masking import sanitize_log_record
@@ -401,6 +402,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     _configure_logging(args.verbose)
+    try:
+        validate_env()
+    except EnvValidationError as exc:
+        logger.error("%s", exc)
+        return 2
     try:
         stats = run_analysis(
             input_file=args.input,
