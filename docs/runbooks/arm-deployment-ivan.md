@@ -2,6 +2,37 @@
 
 Инструкция описывает установку и отладку `clarify-engine-ai` на АРМ Ивана Гулиенко. Целевая среда: Windows 10/11 с русской локалью, Windows CMD (`cmd.exe`), Python 3.14 через `py` launcher, CPU-only Ollama и рабочий каталог `C:\Projects\clarify-engine-ai`.
 
+## 0. Quick-start через Installer L1
+
+Для первой установки вместо ручного выполнения команд из раздела 2 можно
+запустить wizard из корня проекта:
+
+```cmd
+scripts\install\clarify-setup.cmd
+```
+
+Wizard выполняет шаги `[1/8]..[8/8]`: проверяет среду, создаёт runtime
+директории, поднимает `venv`, создаёт `.env` из `.env.example`, проверяет
+Ollama и модель `qwen2.5:7b`, запускает smoke import, создаёт ярлыки и
+показывает итоговый URL `http://localhost:8501`. Повторный запуск
+идемпотентен: существующие `.env`, `logs/`, `chroma_data/`,
+`data/incoming/` и `data/output/` не перезаписываются.
+
+Если рядом с проектом найден `.env.txt`, но отсутствует `.env`, wizard
+останавливается и просит вручную выполнить:
+
+```cmd
+ren .env.txt .env
+```
+
+Загрузка модели через `ollama pull qwen2.5:7b` выполняется только после
+явного подтверждения. Лог установки пишется в `logs\install.jsonl`; секреты
+из `.env` туда не попадают. Для проверки без тяжёлых команд доступен режим:
+
+```cmd
+scripts\install\clarify-setup.cmd --dry-run
+```
+
 ## 1. Предварительные требования
 
 Проверьте, что установлены Git for Windows, Python 3.14, Ollama for Windows и доступ к GitHub-репозиторию. Все команды ниже выполняются только в Windows CMD, не в PowerShell, WSL или Git Bash.

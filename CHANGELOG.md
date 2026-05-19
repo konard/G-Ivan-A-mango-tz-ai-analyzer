@@ -7,6 +7,22 @@
 ## [Unreleased]
 
 ### Code
+- **CODE: BL-48 ARM Installer L1 clarify-setup.cmd.** Добавлен
+  Windows-first First-Run wizard
+  [`scripts/install/clarify-setup.py`](scripts/install/clarify-setup.py) и
+  thin CMD wrapper
+  [`scripts/install/clarify-setup.cmd`](scripts/install/clarify-setup.cmd).
+  Wizard закрывает шаги `[1/8]..[8/8]`: environment, runtime directories,
+  venv/pip, `.env`, Ollama/model, smoke import, shortcuts и final summary.
+  Тяжёлые команды проходят через testable `run_step()`, `.env` создаётся
+  из `.env.example`, существующий `.env` не перезаписывается, `.env.txt`
+  останавливает установку с подсказкой `ren .env.txt .env`, модель по
+  умолчанию — `qwen2.5:7b`, `ollama pull` требует подтверждения. Логи
+  пишутся как structured JSONL в `logs/install.jsonl`, секретные поля
+  редактируются перед записью. Добавлены
+  [`scripts/install/migrations/.gitkeep`](scripts/install/migrations/.gitkeep)
+  и регрессионные тесты
+  [`tests/test_install_first_run.py`](tests/test_install_first_run.py).
 - **CODE: BL-51 auto-detect Ollama path (issue #195).** Добавлены
   `_resolve_ollama_executable()` и `_log_ollama_executable_once()` в
   [`src/llm/client.py`](src/llm/client.py). Резолюция идёт в порядке
