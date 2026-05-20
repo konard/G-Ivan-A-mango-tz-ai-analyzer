@@ -140,11 +140,30 @@ LABELS: Dict[str, str] = {
     "analysis_run_in_progress": (
         "Идёт анализ требований… NFR-03: ≤ 15 мин на CPU-only."
     ),
+    "analysis_progress_template": "Обработано: {processed} / {total}",
+    "analysis_counter_template": "Успешно: {success} / Ошибки: {errors}",
     "analysis_run_success_template": (
         "Анализ завершён за {duration_seconds:.1f} с (run_id `{run_id}`). "
         "Всего: {total}, успешно: {success}, ошибки: {errors}, НД: {nd}."
     ),
     "analysis_download_button_template": "📥 Скачать отчёт ({label})",
+    "analysis_retry_button": "🔁 Повторить только ошибки",
+    "analysis_retry_help_template": (
+        "Повторить пайплайн только для {count} строк со статусом «Ошибка». "
+        "Файл загружать заново не нужно."
+    ),
+    "analysis_retry_no_errors_help": (
+        "В текущем результате нет строк со статусом «Ошибка»."
+    ),
+    "analysis_retry_unavailable_help": (
+        "Повтор недоступен: в сессии нет исходного файла или XLSX-результата."
+    ),
+    "analysis_retry_in_progress": "Повторяем строки со статусом «Ошибка»…",
+    "analysis_retry_success_template": (
+        "Повторено строк: {retried}, успешно после повтора: {success}, "
+        "осталось ошибок: {errors}."
+    ),
+    "analysis_retry_error_template": "Не удалось повторить ошибки: {error}",
     "analysis_intro_upload_info": (
         "Загрузите файл ТЗ (`.xlsx`/`.docx`, ≤ 10 МБ), выберите формат отчёта "
         "и нажмите **🚀 Запустить анализ**, чтобы получить результат с "

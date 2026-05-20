@@ -53,6 +53,18 @@
   [PR #205](https://github.com/G-Ivan-A/clarify-engine-ai/pull/205).
 
 ### Code
+- **CODE+DOCS: BL-57-F close active UI/runbook P1 gaps (issue #208).**
+  Active `streamlit run src/ui/app.py` now matches FR-07 batch UX for
+  «📊 Анализ ТЗ»: the upload pipeline renders a progress bar, live
+  `Успешно: X / Ошибки: Y` counter, output-mode caption, and
+  `🔁 Повторить только ошибки` control backed by the latest canonical XLSX
+  result in `st.session_state` (no re-upload required). `src.pipeline.run_analysis`
+  accepts an optional `progress_callback` and emits per-row `PipelineStats`
+  snapshots without breaking CLI callers. Upload acceptance logging no longer
+  uses reserved `LogRecord.filename`; it writes `upload_filename` instead.
+  Runbook §2 now includes the BL-53 `.env` / `configs/*.yaml` restart checklist
+  required by the existing contract test.
+
 - **CODE+DOCS: BL-55 first-response UX (spinner + warmup) (issue #199).**
   Спиннер «Спрашиваем LLM…» в [`src/ui/constants.py`](src/ui/constants.py)
   теперь содержит явное предупреждение «⏱ Первый ответ на CPU может
