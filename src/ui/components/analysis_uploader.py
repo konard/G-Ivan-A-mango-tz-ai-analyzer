@@ -154,7 +154,7 @@ def validate_uploaded_file(
         "analysis_uploader: file accepted",
         extra={
             "event": "UPLOAD_ACCEPTED",
-            "filename": _safe_filename_for_log(name),
+            "upload_filename": _safe_filename_for_log(name),
             "extension": extension,
             "size_bytes": size_bytes,
         },

@@ -141,6 +141,8 @@ OLLAMA_MODEL=qwen2.5:7b
 OLLAMA_TIMEOUT=180
 ```
 
+> ⚠️ **BL-53 (issue #198): после правок `.env` или `configs/*.yaml` нужен полный рестарт Streamlit.** Нажмите `Ctrl+C` в окне, где запущен UI, снова выполните `streamlit run src/ui/app.py`, затем в браузере нажмите `Ctrl+Shift+R`. Кнопка Streamlit `Rerun` перечитает скрипт, но не гарантирует сброс уже загруженных `.env` / YAML-настроек в памяти процесса.
+
 Запустите Ollama daemon в отдельном окне CMD и оставьте это окно открытым:
 
 ```cmd

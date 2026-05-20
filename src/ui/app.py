@@ -25,6 +25,7 @@ import logging
 import re
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -112,6 +113,13 @@ DEFAULT_CITATIONS_BASE_URL = "http://localhost:8000/docs"
 
 CHUNK_PREVIEW_CHARS = 600
 
+ERROR_STATUS = "Ошибка"
+STATUS_COLUMN = "[Статус]"
+COMMENT_COLUMN = "[Комментарий]"
+CONFIDENCE_COLUMN = "[Confidence]"
+RUNID_COLUMN = "[RunID]"
+RESULT_COLUMNS = [STATUS_COLUMN, COMMENT_COLUMN, CONFIDENCE_COLUMN, RUNID_COLUMN]
+
 DEFAULT_MAX_HISTORY_MESSAGES = 6
 DEFAULT_MULTI_HOP_MAX_HOPS = 2
 DEFAULT_MULTI_HOP_MIN_CONFIDENCE_TO_STOP = 0.8
@@ -153,6 +161,17 @@ _REFLECTION_PROMPT_FALLBACK = (
 # -------------------------------------------------------------------- errors --
 class KBError(RuntimeError):
     """User-facing error raised when the knowledge base cannot be queried."""
+
+
+@dataclass(frozen=True)
+class AnalysisRetryResult:
+    """Result of retrying only rows that failed in the latest batch run."""
+
+    stats: Any
+    report_bytes: bytes
+    canonical_result_bytes: bytes
+    run_id: str
+    retried_count: int
 
 
 # ------------------------------------------------------------------- helpers --
@@ -1029,7 +1048,10 @@ def _show_toast(message: str, *, icon: Optional[str] = None) -> None:
     toast = getattr(st, "toast", None)
     if callable(toast):
         try:
-            toast(message, icon=icon) if icon else toast(message)
+            if icon:
+                toast(message, icon=icon)
+            else:
+                toast(message)
             return
         except TypeError:
             toast(message)
@@ -1080,6 +1102,7 @@ def _run_analysis_upload_mode() -> None:
         horizontal=True,
         help=LABELS["export_format_help"],
     )
+    st.caption(LABELS["export_mode_caption"])
     selected_format = str(
         st.session_state.get(SESSION_EXPORT_FORMAT_KEY) or "xlsx"
     ).lower()
@@ -1105,6 +1128,349 @@ def _run_analysis_upload_mode() -> None:
         st.info(LABELS["analysis_intro_upload_info"])
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _stats_to_dict(stats: Any) -> Dict[str, Any]:
+    """Normalise ``PipelineStats``/dict-like objects for UI rendering."""
+    if isinstance(stats, dict):
+        return dict(stats)
+    as_dict = getattr(stats, "as_dict", None)
+    if callable(as_dict):
+        try:
+            data = as_dict()
+        except Exception:  # noqa: BLE001
+            data = {}
+        if isinstance(data, dict):
+            return data
+    return {
+        "run_id": str(getattr(stats, "run_id", "") or ""),
+        "total": _safe_int(getattr(stats, "total", 0)),
+        "success": _safe_int(getattr(stats, "success", 0)),
+        "errors": _safe_int(getattr(stats, "errors", 0)),
+        "nd": _safe_int(getattr(stats, "nd", 0)),
+        "by_provider": dict(getattr(stats, "by_provider", {}) or {}),
+    }
+
+
+def _render_analysis_counter(stats: Any, *, target: Optional[Any] = None) -> str:
+    data = _stats_to_dict(stats)
+    text = LABELS["analysis_counter_template"].format(
+        success=_safe_int(data.get("success")),
+        errors=_safe_int(data.get("errors")),
+    )
+    if target is not None:
+        for method_name in ("markdown", "caption", "write"):
+            method = getattr(target, method_name, None)
+            if callable(method):
+                method(text)
+                return text
+    st.caption(text)
+    return text
+
+
+def _render_analysis_metrics(stats: Any) -> None:
+    data = _stats_to_dict(stats)
+    _render_analysis_counter(data)
+    columns = getattr(st, "columns", None)
+    if not callable(columns):
+        return
+    try:
+        col_success, col_errors, col_total = columns(3)
+    except Exception:  # noqa: BLE001 - metrics are cosmetic
+        return
+    metrics = (
+        (col_success, "✅ Успешно", _safe_int(data.get("success"))),
+        (col_errors, "❌ Ошибки", _safe_int(data.get("errors"))),
+        (col_total, "📦 Всего", _safe_int(data.get("total"))),
+    )
+    for column, label, value in metrics:
+        metric = getattr(column, "metric", None)
+        if callable(metric):
+            metric(label, value)
+
+
+def _empty_widget(widget: Optional[Any]) -> None:
+    if widget is None:
+        return
+    empty = getattr(widget, "empty", None)
+    if callable(empty):
+        try:
+            empty()
+        except Exception:  # noqa: BLE001 - cleanup should never mask results
+            return
+
+
+def _build_analysis_progress_callback(
+    initial_text: Optional[str] = None,
+) -> tuple[Callable[[Any], None], Optional[Any]]:
+    progress_widget: Optional[Any] = None
+    progress_text = initial_text or LABELS["analysis_run_in_progress"]
+    progress = getattr(st, "progress", None)
+    if callable(progress):
+        try:
+            progress_widget = progress(0, text=progress_text)
+        except TypeError:
+            progress_widget = progress(0)
+
+    counter_slot: Optional[Any] = None
+    empty = getattr(st, "empty", None)
+    if callable(empty):
+        try:
+            counter_slot = empty()
+        except Exception:  # noqa: BLE001
+            counter_slot = None
+
+    def _update(stats: Any) -> None:
+        data = _stats_to_dict(stats)
+        total = _safe_int(data.get("total"))
+        success = _safe_int(data.get("success"))
+        errors = _safe_int(data.get("errors"))
+        processed = success + errors
+        if total:
+            processed = min(processed, total)
+            progress_value = min(max(processed / total, 0.0), 1.0)
+        else:
+            progress_value = 0.0
+        progress_text = LABELS["analysis_progress_template"].format(
+            processed=processed,
+            total=total,
+        )
+        update_progress = getattr(progress_widget, "progress", None)
+        if callable(update_progress):
+            try:
+                update_progress(progress_value, text=progress_text)
+            except TypeError:
+                update_progress(progress_value)
+        _render_analysis_counter(data, target=counter_slot)
+
+    return _update, progress_widget
+
+
+def _clean_cell(value: Any) -> Any:
+    if value is None:
+        return ""
+    try:
+        if value != value:  # NaN
+            return ""
+    except Exception:  # noqa: BLE001
+        return value
+    return value
+
+
+def _result_status_counts(result_bytes: bytes) -> Dict[str, int]:
+    """Count status values in the canonical XLSX result."""
+    if not result_bytes:
+        return {}
+    import pandas as pd
+
+    try:
+        workbook = pd.read_excel(BytesIO(result_bytes), sheet_name=None)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(workbook, dict):
+        return {}
+    counts: Dict[str, int] = {}
+    for df in workbook.values():
+        if STATUS_COLUMN not in df.columns:
+            continue
+        series = df[STATUS_COLUMN].map(lambda value: str(_clean_cell(value)))
+        for value in series.unique():
+            if value:
+                counts[value] = counts.get(value, 0) + int((series == value).sum())
+    return counts
+
+
+def _export_rows_from_result_dataframe(
+    df: Any,
+    *,
+    start_index: int = 1,
+) -> List[Dict[str, Any]]:
+    """Build format-invariant export rows from the canonical result workbook."""
+    rows: List[Dict[str, Any]] = []
+    for idx, row in df.iterrows():
+        row_dict = dict(row)
+        raw_id = _clean_cell(
+            row_dict.get("ID") or row_dict.get("id") or row_dict.get("№")
+        )
+        row_id = _safe_int(raw_id, start_index + len(rows))
+        source_text = _clean_cell(
+            row_dict.get("Исходное требование")
+            or row_dict.get("Требование")
+            or row_dict.get("text")
+        )
+        if not source_text:
+            for key, value in row_dict.items():
+                if key in RESULT_COLUMNS or key in {"ID", "id", "№", "Ref", "ref"}:
+                    continue
+                source_text = _clean_cell(value)
+                if source_text:
+                    break
+        rows.append(
+            {
+                "id": row_id,
+                "ref": str(_clean_cell(row_dict.get("Ref") or row_dict.get("ref"))),
+                "Исходное требование": str(source_text or ""),
+                "locator": {},
+                STATUS_COLUMN: str(_clean_cell(row_dict.get(STATUS_COLUMN)) or "НД"),
+                COMMENT_COLUMN: str(_clean_cell(row_dict.get(COMMENT_COLUMN))),
+                CONFIDENCE_COLUMN: _safe_float(row_dict.get(CONFIDENCE_COLUMN)),
+                RUNID_COLUMN: str(_clean_cell(row_dict.get(RUNID_COLUMN))),
+            }
+        )
+    return rows
+
+
+def _export_rows_from_result_bytes(result_bytes: bytes) -> List[Dict[str, Any]]:
+    import pandas as pd
+
+    workbook = pd.read_excel(BytesIO(result_bytes), sheet_name=None)
+    rows: List[Dict[str, Any]] = []
+    if not isinstance(workbook, dict):
+        return rows
+    for df in workbook.values():
+        rows.extend(
+            _export_rows_from_result_dataframe(
+                df,
+                start_index=len(rows) + 1,
+            )
+        )
+    return rows
+
+
+def _build_download_report_from_canonical(
+    canonical_result_bytes: bytes,
+    *,
+    output_format: str,
+    output_dir: Path,
+    source_filename: str,
+    run_id: str,
+) -> bytes:
+    safe_format = output_format if output_format in EXPORT_FORMAT_LABELS else "xlsx"
+    if safe_format == "xlsx":
+        return canonical_result_bytes
+
+    from src.exporters import ExportRouter
+
+    rows = _export_rows_from_result_bytes(canonical_result_bytes)
+    output_path = ExportRouter(config_path=EXPORT_CONFIG_PATH).export(
+        rows,
+        output_dir=output_dir,
+        output_format=safe_format,
+        source_file=source_filename,
+        run_id=run_id,
+        output_mode="create_new",
+    )
+    return Path(output_path).read_bytes()
+
+
+def _retry_error_rows(
+    *,
+    source_bytes: bytes,
+    source_filename: str,
+    last_result_bytes: bytes,
+    output_format: str,
+    progress_callback: Optional[Callable[[Any], None]] = None,
+) -> AnalysisRetryResult:
+    """Re-run only rows whose latest canonical result has status ``Ошибка``."""
+    import pandas as pd
+    from src.pipeline import run_analysis
+
+    _ = source_bytes
+    workbook = pd.read_excel(BytesIO(last_result_bytes), sheet_name=None)
+    if not isinstance(workbook, dict):
+        workbook = {"Results": workbook}
+
+    status_column_seen = False
+    error_locations: List[tuple[str, int]] = []
+    retry_source_frames: List[Any] = []
+    for sheet_name, sheet_df in workbook.items():
+        if STATUS_COLUMN not in sheet_df.columns:
+            continue
+        status_column_seen = True
+        error_mask = sheet_df[STATUS_COLUMN].astype(str) == ERROR_STATUS
+        if not bool(error_mask.any()):
+            continue
+        error_locations.extend((sheet_name, idx) for idx in sheet_df.index[error_mask])
+        retry_source_frames.append(
+            sheet_df.loc[error_mask]
+            .drop(columns=[col for col in RESULT_COLUMNS if col in sheet_df.columns])
+            .reset_index(drop=True)
+        )
+
+    if not status_column_seen:
+        raise RuntimeError(
+            "Предыдущий результат не содержит колонку [Статус]; нечего повторять."
+        )
+    if not error_locations:
+        raise RuntimeError("В предыдущем результате нет строк со статусом «Ошибка».")
+
+    retry_run_id = _new_run_id()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        subset_df = pd.concat(retry_source_frames, ignore_index=True)
+        subset_input = tmp_path / "retry_input.xlsx"
+        subset_output = tmp_path / f"retry_result_{retry_run_id}.xlsx"
+        subset_df.to_excel(subset_input, index=False)
+
+        retry_stats = run_analysis(
+            input_file=str(subset_input),
+            output_file=str(subset_output),
+            run_id=retry_run_id,
+            progress_callback=progress_callback,
+        )
+        retry_df = pd.read_excel(subset_output)
+
+        for sheet_df in workbook.values():
+            for col in RESULT_COLUMNS:
+                if col in sheet_df.columns and col in retry_df.columns:
+                    target_dtype = retry_df[col].dtype
+                    if sheet_df[col].dtype == target_dtype:
+                        continue
+                    try:
+                        sheet_df[col] = sheet_df[col].astype(target_dtype)
+                    except (TypeError, ValueError):
+                        sheet_df[col] = sheet_df[col].astype(object)
+
+        for new_idx, (sheet_name, orig_idx) in enumerate(error_locations):
+            sheet_df = workbook[sheet_name]
+            for col in RESULT_COLUMNS:
+                if col in retry_df.columns:
+                    sheet_df.at[orig_idx, col] = retry_df.at[new_idx, col]
+
+        canonical_buffer = BytesIO()
+        with pd.ExcelWriter(canonical_buffer) as writer:
+            for sheet_name, sheet_df in workbook.items():
+                sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        canonical_bytes = canonical_buffer.getvalue()
+        report_bytes = _build_download_report_from_canonical(
+            canonical_bytes,
+            output_format=output_format,
+            output_dir=tmp_path,
+            source_filename=source_filename,
+            run_id=retry_run_id,
+        )
+
+    return AnalysisRetryResult(
+        stats=retry_stats,
+        report_bytes=report_bytes,
+        canonical_result_bytes=canonical_bytes,
+        run_id=retry_run_id,
+        retried_count=len(error_locations),
+    )
+
+
 def _execute_analysis_pipeline(uploaded_file: Any, *, output_format: str) -> None:
     """Persist the upload, run the pipeline, and store result bytes in session."""
     from src.pipeline import run_analysis
@@ -1128,22 +1494,33 @@ def _execute_analysis_pipeline(uploaded_file: Any, *, output_format: str) -> Non
         },
     )
 
+    progress_callback, progress_widget = _build_analysis_progress_callback()
+    output_ext = EXPORT_FORMAT_LABELS[safe_format].lstrip(".")
     try:
         with st.spinner(LABELS["analysis_run_in_progress"]):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 tmp_path = Path(tmp_dir)
                 input_path = tmp_path / f"input{suffix}"
-                output_ext = EXPORT_FORMAT_LABELS[safe_format].lstrip(".")
-                output_path = tmp_path / f"result_{run_id}.{output_ext}"
+                canonical_output_path = tmp_path / f"result_{run_id}.xlsx"
                 input_path.write_bytes(file_bytes)
 
                 stats = run_analysis(
                     input_file=str(input_path),
-                    output_file=str(output_path),
+                    output_file=str(canonical_output_path),
+                    run_id=run_id,
+                    progress_callback=progress_callback,
+                )
+                progress_callback(stats)
+                canonical_result_bytes = canonical_output_path.read_bytes()
+                report_bytes = _build_download_report_from_canonical(
+                    canonical_result_bytes,
+                    output_format=safe_format,
+                    output_dir=tmp_path,
+                    source_filename=raw_name,
                     run_id=run_id,
                 )
-                report_bytes = output_path.read_bytes()
     except Exception as exc:  # noqa: BLE001 - UI must surface the failure.
+        _empty_widget(progress_widget)
         st.error(LABELS["analysis_pipeline_error_template"].format(error=exc))
         _safe_log_ui_error(
             run_id=run_id,
@@ -1153,14 +1530,19 @@ def _execute_analysis_pipeline(uploaded_file: Any, *, output_format: str) -> Non
         )
         return
 
+    _empty_widget(progress_widget)
     duration_seconds = time.monotonic() - started_at
     base_stem = Path(raw_name).stem or "clarify-analysis"
     result_filename = f"{base_stem}__result_{run_id}.{output_ext}"
+    stats_dict = _stats_to_dict(stats)
     st.session_state[SESSION_ANALYSIS_LAST_RUN_KEY] = {
         "run_id": run_id,
+        "source_filename": raw_name,
+        "source_bytes": file_bytes,
         "filename": result_filename,
         "report_bytes": report_bytes,
-        "stats": stats.as_dict(),
+        "canonical_result_bytes": canonical_result_bytes,
+        "stats": stats_dict,
         "format": safe_format,
         "duration_seconds": duration_seconds,
     }
@@ -1172,15 +1554,103 @@ def _execute_analysis_pipeline(uploaded_file: Any, *, output_format: str) -> Non
             "upload_filename": safe_name,
             "output_format": safe_format,
             "duration_seconds": duration_seconds,
-            "stats": stats.as_dict(),
+            "stats": stats_dict,
         },
     )
     _show_toast(LABELS["toast_search_success"], icon="✅")
 
 
+def _analysis_error_rows(last_run: Dict[str, Any]) -> int:
+    canonical_bytes = last_run.get("canonical_result_bytes")
+    if not canonical_bytes and last_run.get("format") == "xlsx":
+        canonical_bytes = last_run.get("report_bytes")
+    if isinstance(canonical_bytes, bytes) and canonical_bytes:
+        counts = _result_status_counts(canonical_bytes)
+        if counts:
+            return counts.get(ERROR_STATUS, 0)
+    stats = _stats_to_dict(last_run.get("stats") or {})
+    return _safe_int(stats.get("errors"))
+
+
+def _patched_stats_after_retry(
+    previous_stats: Dict[str, Any],
+    canonical_result_bytes: bytes,
+) -> Dict[str, Any]:
+    counts = _result_status_counts(canonical_result_bytes)
+    total = _safe_int(previous_stats.get("total"))
+    if not total:
+        total = sum(counts.values())
+    errors = counts.get(ERROR_STATUS, 0)
+    return {
+        **previous_stats,
+        "total": total,
+        "success": max(0, total - errors),
+        "errors": errors,
+        "nd": counts.get("НД", 0),
+    }
+
+
+def _handle_retry_last_analysis_run(last_run: Dict[str, Any]) -> None:
+    source_bytes = last_run.get("source_bytes")
+    canonical_bytes = last_run.get("canonical_result_bytes")
+    if not isinstance(source_bytes, bytes) or not isinstance(canonical_bytes, bytes):
+        st.error(LABELS["analysis_retry_unavailable_help"])
+        return
+
+    progress_callback, progress_widget = _build_analysis_progress_callback(
+        LABELS["analysis_retry_in_progress"]
+    )
+    try:
+        retry = _retry_error_rows(
+            source_bytes=source_bytes,
+            source_filename=str(last_run.get("source_filename") or "upload.xlsx"),
+            last_result_bytes=canonical_bytes,
+            output_format=str(last_run.get("format") or "xlsx"),
+            progress_callback=progress_callback,
+        )
+        progress_callback(retry.stats)
+    except Exception as exc:  # noqa: BLE001
+        _empty_widget(progress_widget)
+        st.error(LABELS["analysis_retry_error_template"].format(error=exc))
+        _safe_log_ui_error(
+            run_id=str(last_run.get("run_id") or _new_run_id()),
+            mode=MODE_STATELESS,
+            provider="pipeline",
+            exc=exc,
+        )
+        return
+
+    _empty_widget(progress_widget)
+    stats = _patched_stats_after_retry(
+        _stats_to_dict(last_run.get("stats") or {}),
+        retry.canonical_result_bytes,
+    )
+    fmt = str(last_run.get("format") or "xlsx")
+    output_ext = EXPORT_FORMAT_LABELS.get(fmt, f".{fmt}").lstrip(".")
+    source_stem = Path(str(last_run.get("source_filename") or "upload")).stem
+    st.session_state[SESSION_ANALYSIS_LAST_RUN_KEY] = {
+        **last_run,
+        "filename": f"{source_stem}__retry_{retry.run_id}.{output_ext}",
+        "report_bytes": retry.report_bytes,
+        "canonical_result_bytes": retry.canonical_result_bytes,
+        "stats": stats,
+        "retry_run_id": retry.run_id,
+    }
+    st.success(
+        LABELS["analysis_retry_success_template"].format(
+            retried=retry.retried_count,
+            success=_safe_int(_stats_to_dict(retry.stats).get("success")),
+            errors=stats["errors"],
+        )
+    )
+    rerun = getattr(st, "rerun", None)
+    if callable(rerun):
+        rerun()
+
+
 def _render_analysis_run_summary(last_run: Dict[str, Any]) -> None:
     """Render the post-run status banner + download button."""
-    stats = last_run.get("stats") or {}
+    stats = _stats_to_dict(last_run.get("stats") or {})
     fmt = str(last_run.get("format") or "xlsx")
     label = EXPORT_FORMAT_LABELS.get(fmt, f".{fmt}")
     mime = EXPORT_MIME_TYPES.get(fmt, "application/octet-stream")
@@ -1195,6 +1665,7 @@ def _render_analysis_run_summary(last_run: Dict[str, Any]) -> None:
             duration_seconds=float(last_run.get("duration_seconds") or 0.0),
         )
     )
+    _render_analysis_metrics(stats)
     st.download_button(
         LABELS["analysis_download_button_template"].format(label=label),
         data=BytesIO(last_run.get("report_bytes") or b""),
@@ -1202,6 +1673,23 @@ def _render_analysis_run_summary(last_run: Dict[str, Any]) -> None:
         mime=mime,
         disabled=not bool(last_run.get("report_bytes")),
     )
+    error_rows = _analysis_error_rows(last_run)
+    can_retry = bool(last_run.get("source_bytes")) and bool(
+        last_run.get("canonical_result_bytes")
+    )
+    retry_disabled = error_rows == 0 or not can_retry
+    if not can_retry:
+        retry_help = LABELS["analysis_retry_unavailable_help"]
+    elif retry_disabled:
+        retry_help = LABELS["analysis_retry_no_errors_help"]
+    else:
+        retry_help = LABELS["analysis_retry_help_template"].format(count=error_rows)
+    if st.button(
+        LABELS["analysis_retry_button"],
+        disabled=retry_disabled,
+        help=retry_help,
+    ):
+        _handle_retry_last_analysis_run(last_run)
 
 
 def _sanitize_filename_for_log(name: str) -> str:

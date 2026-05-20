@@ -27,7 +27,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from src.config_loader import EnvValidationError, validate_env
 from src.exporters import ExportRouter
@@ -230,6 +230,7 @@ def run_analysis(
     llm_client: Optional[LLMClient] = None,
     documents: Optional[Iterable[Dict[str, Any]]] = None,
     run_id: Optional[str] = None,
+    progress_callback: Optional[Callable[[PipelineStats], None]] = None,
 ) -> PipelineStats:
     """Run the full analysis pipeline on a single ТЗ file."""
     run_id = run_id or uuid.uuid4().hex
@@ -268,6 +269,20 @@ def run_analysis(
 
     stats = PipelineStats(run_id=run_id, total=len(requirements))
     results: List[Dict[str, Any]] = []
+
+    def _emit_progress() -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(stats)
+        except Exception:  # noqa: BLE001 - progress UI must not break analysis
+            logger.warning(
+                "Pipeline progress callback failed",
+                extra={"event": "PIPELINE_PROGRESS_CALLBACK_FAILED"},
+                exc_info=True,
+            )
+
+    _emit_progress()
 
     for req in requirements:
         req_id = str(req["id"])
@@ -328,6 +343,7 @@ def run_analysis(
                     },
                 }
             )
+        _emit_progress()
 
     ExportRouter().export(
         results,

@@ -21,9 +21,12 @@ install.
 from __future__ import annotations
 
 import hashlib
+import io
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 
 def _ensure_streamlit_stub() -> None:
@@ -75,9 +78,13 @@ def _ensure_streamlit_stub() -> None:
         "text_area",
         "radio",
         "chat_input",
+        "progress",
+        "empty",
     ):
         if not hasattr(stub, attr):
             setattr(stub, attr, _noop)
+    if not hasattr(stub, "columns"):
+        stub.columns = lambda n: [_Ctx() for _ in range(n)]
     if not hasattr(stub, "session_state"):
         stub.session_state = {}
     if not hasattr(stub, "sidebar"):
@@ -697,6 +704,14 @@ class _StubUpload:
         return self._data
 
 
+class _MetricCtx:
+    def __init__(self, sink: list):
+        self.sink = sink
+
+    def metric(self, *args, **kwargs):
+        self.sink.append((args, kwargs))
+
+
 def _patch_streamlit_widgets(monkeypatch, *, uploaded=None, format_choice="xlsx"):
     """Wire the streamlit stub so the upload-mode flow runs end-to-end."""
     recorded = {
@@ -708,6 +723,8 @@ def _patch_streamlit_widgets(monkeypatch, *, uploaded=None, format_choice="xlsx"
         "errors": [],
         "successes": [],
         "infos": [],
+        "captions": [],
+        "metrics": [],
     }
 
     monkeypatch.setattr(
@@ -738,6 +755,12 @@ def _patch_streamlit_widgets(monkeypatch, *, uploaded=None, format_choice="xlsx"
     monkeypatch.setattr(st, "error", lambda msg: recorded["errors"].append(msg))
     monkeypatch.setattr(st, "success", lambda msg: recorded["successes"].append(msg))
     monkeypatch.setattr(st, "info", lambda msg: recorded["infos"].append(msg))
+    monkeypatch.setattr(st, "caption", lambda msg: recorded["captions"].append(msg))
+    monkeypatch.setattr(
+        st,
+        "columns",
+        lambda n: [_MetricCtx(recorded["metrics"]) for _ in range(n)],
+    )
     return recorded
 
 
@@ -864,6 +887,9 @@ def test_run_analysis_upload_mode_executes_pipeline_when_button_clicked(
 
 def test_execute_analysis_pipeline_writes_session_state(monkeypatch, tmp_path) -> None:
     """``_execute_analysis_pipeline`` persists the report bytes + stats."""
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+
     st.session_state.clear()
     uploaded = _StubUpload("brief.docx", data=b"file-body")
 
@@ -884,11 +910,20 @@ def test_execute_analysis_pipeline_writes_session_state(monkeypatch, tmp_path) -
 
     captured = {}
 
-    def _fake_run_analysis(*, input_file, output_file, run_id):
+    def _fake_run_analysis(*, input_file, output_file, run_id, progress_callback=None):
         captured["input_file"] = input_file
         captured["output_file"] = output_file
         captured["run_id"] = run_id
-        Path(output_file).write_bytes(b"report-result")
+        pd.DataFrame(
+            {
+                "ID": [1, 2, 3],
+                "Требование": ["A", "B", "C"],
+                "[Статус]": ["Да", "Да", "НД"],
+                "[Комментарий]": ["ok", "ok", "nd"],
+                "[Confidence]": [0.9, 0.8, 0.0],
+                "[RunID]": [run_id, run_id, run_id],
+            }
+        ).to_excel(output_file, index=False)
         return _Stats()
 
     fake_pipeline = ModuleType("src.pipeline")
@@ -899,15 +934,128 @@ def test_execute_analysis_pipeline_writes_session_state(monkeypatch, tmp_path) -
 
     last_run = st.session_state.get(app.SESSION_ANALYSIS_LAST_RUN_KEY)
     assert isinstance(last_run, dict)
-    assert last_run["report_bytes"] == b"report-result"
+    assert last_run["canonical_result_bytes"]
+    assert last_run["report_bytes"]
     assert last_run["filename"].startswith("brief__result_")
     assert last_run["filename"].endswith(".docx")
     assert last_run["format"] == "docx"
     assert last_run["stats"]["total"] == 3
+    assert last_run["source_filename"] == "brief.docx"
+    assert last_run["source_bytes"] == b"file-body"
     assert last_run["duration_seconds"] >= 0.0
-    # The pipeline was given a temp path with the right suffix.
+    # The pipeline writes a canonical XLSX report; the UI converts it for download.
     assert captured["input_file"].endswith(".docx")
-    assert captured["output_file"].endswith(".docx")
+    assert captured["output_file"].endswith(".xlsx")
+
+
+def test_execute_analysis_pipeline_updates_progress_and_live_counter(monkeypatch) -> None:
+    """Active upload flow must expose progress plus ``Успешно / Ошибки`` live."""
+    from src.pipeline import PipelineStats
+
+    st.session_state.clear()
+    uploaded = _StubUpload("brief.xlsx", data=b"file-body")
+    progress_calls: list[tuple[float, str]] = []
+    counter_calls: list[str] = []
+
+    class _Progress:
+        def progress(self, value, **kwargs):
+            progress_calls.append((value, kwargs.get("text", "")))
+
+        def empty(self):
+            return None
+
+    class _CounterSlot:
+        def markdown(self, message):
+            counter_calls.append(message)
+
+    monkeypatch.setattr(app, "_show_toast", lambda *_a, **_kw: None)
+    monkeypatch.setattr(st, "spinner", lambda *_a, **_kw: _NullCtx())
+    monkeypatch.setattr(st, "error", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        st,
+        "progress",
+        lambda value, **kwargs: (
+            progress_calls.append((value, kwargs.get("text", ""))) or _Progress()
+        ),
+    )
+    monkeypatch.setattr(st, "empty", lambda: _CounterSlot())
+
+    def _fake_run_analysis(*, input_file, output_file, run_id, progress_callback=None):
+        for stats in (
+            PipelineStats(run_id=run_id, total=2, success=0, errors=0, nd=0),
+            PipelineStats(run_id=run_id, total=2, success=1, errors=0, nd=0),
+            PipelineStats(run_id=run_id, total=2, success=1, errors=1, nd=0),
+        ):
+            if progress_callback:
+                progress_callback(stats)
+        Path(output_file).write_bytes(b"report-result")
+        return PipelineStats(run_id=run_id, total=2, success=1, errors=1, nd=0)
+
+    fake_pipeline = ModuleType("src.pipeline")
+    fake_pipeline.run_analysis = _fake_run_analysis
+    monkeypatch.setitem(sys.modules, "src.pipeline", fake_pipeline)
+
+    app._execute_analysis_pipeline(uploaded, output_format="xlsx")
+
+    assert progress_calls
+    assert any(call[0] == 0.5 for call in progress_calls)
+    assert any(call[0] == 1.0 for call in progress_calls)
+    assert "Успешно: 1 / Ошибки: 1" in counter_calls
+
+
+def test_active_ui_retry_error_rows_patches_latest_result(monkeypatch) -> None:
+    """Active ``src/ui/app.py`` owns retry-only-errors, not only legacy ``src/app.py``."""
+    from src.pipeline import PipelineStats
+
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+
+    source_df = pd.DataFrame(
+        {"ID": [1, 2, 3], "Требование": ["Req A", "Req B", "Req C"]}
+    )
+    source_buffer = io.BytesIO()
+    source_df.to_excel(source_buffer, index=False)
+
+    result_df = source_df.copy()
+    result_df["[Статус]"] = ["Да", "Ошибка", "Ошибка"]
+    result_df["[Комментарий]"] = ["initial", "initial", "initial"]
+    result_df["[Confidence]"] = [0.0, 0.0, 0.0]
+    result_df["[RunID]"] = ["run-1", "run-1", "run-1"]
+    result_buffer = io.BytesIO()
+    result_df.to_excel(result_buffer, index=False)
+
+    def _fake_run_analysis(*, input_file, output_file, run_id, progress_callback=None):
+        subset_df = pd.read_excel(input_file)
+        n = len(subset_df)
+        fixed = subset_df.copy()
+        fixed["[Статус]"] = ["Да"] * n
+        fixed["[Комментарий]"] = ["fixed"] * n
+        fixed["[Confidence]"] = [0.95] * n
+        fixed["[RunID]"] = [run_id] * n
+        fixed.to_excel(output_file, index=False)
+        stats = PipelineStats(run_id=run_id, total=n, success=n, errors=0, nd=0)
+        if progress_callback:
+            progress_callback(stats)
+        return stats
+
+    fake_pipeline = ModuleType("src.pipeline")
+    fake_pipeline.run_analysis = _fake_run_analysis
+    monkeypatch.setitem(sys.modules, "src.pipeline", fake_pipeline)
+
+    retry = app._retry_error_rows(
+        source_bytes=source_buffer.getvalue(),
+        source_filename="tz.xlsx",
+        last_result_bytes=result_buffer.getvalue(),
+        output_format="xlsx",
+    )
+
+    assert retry.retried_count == 2
+    assert retry.stats.success == 2
+    patched_df = pd.read_excel(io.BytesIO(retry.canonical_result_bytes))
+    assert patched_df.loc[0, "[Комментарий]"] == "initial"
+    assert patched_df.loc[1, "[Комментарий]"] == "fixed"
+    assert patched_df.loc[1, "[RunID]"] == retry.run_id
+    assert patched_df.loc[2, "[Статус]"] == "Да"
 
 
 def test_execute_analysis_pipeline_surfaces_errors(monkeypatch) -> None:
@@ -918,7 +1066,7 @@ def test_execute_analysis_pipeline_surfaces_errors(monkeypatch) -> None:
     monkeypatch.setattr(st, "error", lambda msg: errors.append(msg))
     monkeypatch.setattr(app, "_safe_log_ui_error", lambda **_kw: None)
 
-    def _boom(*, input_file, output_file, run_id):
+    def _boom(*, input_file, output_file, run_id, progress_callback=None):
         raise RuntimeError("parser exploded")
 
     fake_pipeline = ModuleType("src.pipeline")

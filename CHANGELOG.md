@@ -7,6 +7,62 @@
 ## [Unreleased]
 
 ### Documentation
+- **RESEARCH: BL-57 advanced retrieval architecture & international practices analysis (issue #209).**
+  Глубокое исследование retrieval-уровня RAG для трёх кейсов, на которых
+  текущая связка `BM25 + Dense (bge-m3) + RRF(k=60)` + `strict_min_score: 0.30`
+  выдаёт ложные `STRICT_MODE → НД`: (1) Semantic Dilution (multi-faceted
+  requirements), (2) Sparse Embedding (короткие требования вроде «Поддержка
+  SSO.»), (3) Terminology Mismatch (BA-формулировка vs RBAC/ролевая модель
+  в БЗ). Артефакты:
+  [`data/retrieval_golden_set_v1.jsonl`](data/retrieval_golden_set_v1.jsonl)
+  — 19 размеченных требований (3 синтетических кейса #1..#3 + 16 реальных
+  из `test_data/sample_tz_1.DOCX`), DoD требует ≥ 15;
+  [`scripts/research/retrieval_experiments.py`](scripts/research/retrieval_experiments.py)
+  — изолированный CLI-харнесс (`--strategy naive|query_expansion|parent_context_tuning|hybrid_alpha_tuning|metadata_routing|reranker_cross_encoder|all`),
+  работает офлайн без `ollama pull` / `chromadb` / `sentence-transformers`
+  благодаря детерминированному hash-embedder'у (тот же fallback, что в
+  [`src/rag/retriever.py`](src/rag/retriever.py) `_hash_embedding`);
+  [`outputs/retrieval_eval_report_v1.json`](outputs/retrieval_eval_report_v1.json)
+  — машинно-читаемые метрики (`hit_rate@5`, `MRR`, `recall@5`, `precision@3`,
+  `context_recall`, `strict_mode_fallback_rate`, `latency_p50/p95/mean_ms`)
+  для всех 6 стратегий. Главный результат: **Query Expansion**
+  (rule-based domain dictionary, RRF-fusion 4 переписей) — единственная
+  Pareto-оптимальная стратегия Sprint 4: `hit@5` 0.895 → **0.947**
+  (+5.2 pp), `MRR` 0.807 → **0.947** (+14.0 pp), `precision@3` 0.518 →
+  0.632 (+11.4 pp); для `short_sparse`-кейсов (SSO / WebRTC / Click-to-Call)
+  `hit@5` 0.75 → **1.00** и MRR 0.583 → **1.00**. Latency budget
+  `+200 ms (p95)` соблюдён (rule-based +80–120 ms; LLM-вариант отложен
+  как opt-in flag). `STRICT_MODE` остаётся включённым (`strict_min_score`
+  не снижается). Отчёт
+  [`docs/research/2026-05-21_bl-57_retrieval-architecture_v1.md`](docs/research/2026-05-21_bl-57_retrieval-architecture_v1.md)
+  содержит матрицу сравнения международных best practices (LangChain
+  `MultiQueryRetriever`, LlamaIndex `SubQuestionQueryEngine` / Small-to-Big,
+  Haystack `QueryClassifier`, ColBERT v2, `bge-reranker-large`,
+  `ms-marco-MiniLM`, HyDE, dynamic hybrid α, semantic caching), Pareto-
+  анализ quality vs latency, Sprint 4 vs Enterprise decision matrix,
+  план интеграции в [`src/rag/retriever.py`](src/rag/retriever.py) без
+  поломки контрактов `HybridRetriever.retrieve()` / `ParentAwareRetriever`,
+  изменения в [`configs/embedding_config.yaml`](configs/embedding_config.yaml)
+  (`rag.query_expansion_enabled`, `rag.query_expansion_count`,
+  `rag.hybrid_alpha_short/long`, `rag.parent_context_max_chars`),
+  rollout / rollback / CI-regression план. Покрытие:
+  [`tests/research/test_retrieval_experiments.py`](tests/research/test_retrieval_experiments.py)
+  — 21 unit-тест (схема Golden Set, ≥ 3 case_type coverage, шесть
+  стратегий через единый интерфейс, детерминизм при фиксированном seed,
+  CLI-runner `main()` пишет валидный JSON-отчёт, STRICT_MODE fallback
+  threshold конфигурируем). PII / маскирование: Golden Set не содержит
+  email/телефонов/IP — все формулировки взяты из публичной документации
+  Mango Office и обобщены под медицинскую тематику; rule-based словарь
+  синонимов хранится в `configs/` и проходит ревью при PR. Резидентность
+  (NFR-04): rule-based path работает оффлайн без LLM-вызовов; опциональный
+  LLM-fallback использует локальный Ollama. Внедрение рекомендаций — в
+  отдельном PR (`feature flag` default off → A/B → enable). Note: DoD
+  issue #209 литерально указывает путь `bl-57` и changelog-маркер
+  `RESEARCH: BL-57 …` — это опечатка автора issue (трек называется
+  **BL-58**, BL-57 занят отдельным UI-audit
+  [`docs/audit/2026-05-20_bl-57_comprehensive-verification_v1.md`](docs/audit/2026-05-20_bl-57_comprehensive-verification_v1.md)),
+  но имена сохранены побайтово ради автоматической DoD-проверки.
+
 - **DOCS: BL-53 Streamlit `.env` / `configs/*.yaml` cache documented (issue #198).**
   По отчёту пилотного тестирования на АРМ
   ([issue #182](https://github.com/G-Ivan-A/clarify-engine-ai/issues/182) §1.6 /
@@ -101,6 +157,17 @@
   пользовательских данных не логирует. NFR-04 (RU-residency) и NFR-08
   (CPU-only) сохранены: LLM-слой опционален и активируется только при
   явном включении флага в локальной конфигурации.
+- **CODE+DOCS: BL-57-F close active UI/runbook P1 gaps (issue #208).**
+  Active `streamlit run src/ui/app.py` now matches FR-07 batch UX for
+  «📊 Анализ ТЗ»: the upload pipeline renders a progress bar, live
+  `Успешно: X / Ошибки: Y` counter, output-mode caption, and
+  `🔁 Повторить только ошибки` control backed by the latest canonical XLSX
+  result in `st.session_state` (no re-upload required). `src.pipeline.run_analysis`
+  accepts an optional `progress_callback` and emits per-row `PipelineStats`
+  snapshots without breaking CLI callers. Upload acceptance logging no longer
+  uses reserved `LogRecord.filename`; it writes `upload_filename` instead.
+  Runbook §2 now includes the BL-53 `.env` / `configs/*.yaml` restart checklist
+  required by the existing contract test.
 
 - **CODE+DOCS: BL-55 first-response UX (spinner + warmup) (issue #199).**
   Спиннер «Спрашиваем LLM…» в [`src/ui/constants.py`](src/ui/constants.py)

@@ -12,6 +12,7 @@ The tests pin two invariants that the refactor must preserve:
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -171,8 +172,17 @@ def test_labels_dict_covers_every_required_ui_slot() -> None:
         "analysis_no_file_warning",
         "analysis_pipeline_error_template",
         "analysis_run_in_progress",
+        "analysis_progress_template",
+        "analysis_counter_template",
         "analysis_run_success_template",
         "analysis_download_button_template",
+        "analysis_retry_button",
+        "analysis_retry_help_template",
+        "analysis_retry_no_errors_help",
+        "analysis_retry_unavailable_help",
+        "analysis_retry_in_progress",
+        "analysis_retry_success_template",
+        "analysis_retry_error_template",
         "analysis_intro_upload_info",
         # consultation
         "consultation_caption_template",
@@ -286,6 +296,23 @@ def test_validate_uploaded_file_accepts_xlsx_under_limit() -> None:
     assert result.ok is True
     assert result.file is file
     assert result.error_message is None
+
+
+def test_validate_uploaded_file_does_not_collide_with_logrecord_filename(caplog) -> None:
+    """INFO logging must not pass ``extra={'filename': ...}`` into logging."""
+    file = _StubUpload("requirements.xlsx", size=1024)
+
+    with caplog.at_level(logging.INFO, logger=analysis_uploader.logger.name):
+        result = validate_uploaded_file(file)
+
+    assert result.ok is True
+    accepted = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", "") == "UPLOAD_ACCEPTED"
+    ]
+    assert accepted
+    assert getattr(accepted[-1], "upload_filename") == "requirements.xlsx"
 
 
 def test_validate_uploaded_file_accepts_docx_under_limit() -> None:

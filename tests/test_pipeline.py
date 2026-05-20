@@ -83,6 +83,29 @@ def test_run_analysis_end_to_end(tmp_path: Path) -> None:
     assert (df["[Статус]"] == "Да").all()
 
 
+def test_run_analysis_emits_progress_snapshots(tmp_path: Path) -> None:
+    input_file = tmp_path / "tz.xlsx"
+    pd.DataFrame(
+        {"Требование": ["Поддержка интеграции с Битрикс24", "Запись звонков"]}
+    ).to_excel(input_file, index=False)
+    output_file = tmp_path / "result.xlsx"
+    snapshots: list[dict] = []
+
+    run_analysis(
+        input_file=str(input_file),
+        output_file=str(output_file),
+        retriever=_build_retriever(),
+        llm_client=_build_fake_llm(),
+        progress_callback=lambda stats: snapshots.append(stats.as_dict()),
+    )
+
+    assert snapshots[0]["total"] == 2
+    assert snapshots[0]["success"] == 0
+    assert snapshots[0]["errors"] == 0
+    assert snapshots[-1]["success"] == 2
+    assert snapshots[-1]["errors"] == 0
+
+
 def test_run_analysis_accepts_docx_input(tmp_path: Path) -> None:
     docx = pytest.importorskip("docx")
     input_file = tmp_path / "tz.docx"
