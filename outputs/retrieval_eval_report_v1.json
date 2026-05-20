@@ -1,0 +1,1977 @@
+{
+  "generated_at": "2026-05-20T02:21:30.904433+00:00",
+  "golden_set": "data/retrieval_golden_set_v1.jsonl",
+  "top_k": 5,
+  "strict_min_score": 0.3,
+  "seed": 20260521,
+  "n_items": 19,
+  "corpus_chunks": 20,
+  "results": [
+    {
+      "strategy": "naive",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.8947,
+        "mrr_at_k": 0.807,
+        "recall_at_k": 0.8947,
+        "precision_at_3": 0.5175,
+        "context_recall": 0.693,
+        "strict_mode_fallback_rate": 1.0,
+        "latency_p50_ms": 0.559,
+        "latency_p95_ms": 0.795,
+        "latency_mean_ms": 0.579
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.5,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 0.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Click2call_Chrome_UserManual_1_0.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 3,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "query_expansion",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.9474,
+        "mrr_at_k": 0.9474,
+        "recall_at_k": 0.9737,
+        "precision_at_3": 0.6316,
+        "context_recall": 0.75,
+        "strict_mode_fallback_rate": 1.0,
+        "latency_p50_ms": 2.742,
+        "latency_p95_ms": 5.079,
+        "latency_mean_ms": 2.799
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 0.5,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Click2call_Chrome_UserManual_1_0.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "Click2call_Chrome_UserManual_1_0.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "parent_context_tuning",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.8947,
+        "mrr_at_k": 0.807,
+        "recall_at_k": 0.8684,
+        "precision_at_3": 0.5175,
+        "context_recall": 0.693,
+        "strict_mode_fallback_rate": 1.0,
+        "latency_p50_ms": 0.7,
+        "latency_p95_ms": 0.873,
+        "latency_mean_ms": 0.667
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.5,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 0.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Click2call_Chrome_UserManual_1_0.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 3,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "hybrid_alpha_tuning",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.8947,
+        "mrr_at_k": 0.8158,
+        "recall_at_k": 0.8684,
+        "precision_at_3": 0.5175,
+        "context_recall": 0.693,
+        "strict_mode_fallback_rate": 0.0,
+        "latency_p50_ms": 0.615,
+        "latency_p95_ms": 0.891,
+        "latency_mean_ms": 0.607
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.5,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 0.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Click2call_Chrome_UserManual_1_0.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": false,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "metadata_routing",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.8947,
+        "mrr_at_k": 0.8947,
+        "recall_at_k": 0.7368,
+        "precision_at_3": 0.8509,
+        "context_recall": 0.6798,
+        "strict_mode_fallback_rate": 1.0,
+        "latency_p50_ms": 0.117,
+        "latency_p95_ms": 0.286,
+        "latency_mean_ms": 0.136
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.5,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 0.5,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 0.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": []
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "reranker_cross_encoder",
+      "metrics": {
+        "n": 19,
+        "top_k": 5,
+        "hit_rate_at_k": 0.8947,
+        "mrr_at_k": 0.8158,
+        "recall_at_k": 0.8509,
+        "precision_at_3": 0.5351,
+        "context_recall": 0.6491,
+        "strict_mode_fallback_rate": 1.0,
+        "latency_p50_ms": 0.734,
+        "latency_p95_ms": 1.119,
+        "latency_mean_ms": 0.752
+      },
+      "items": [
+        {
+          "id": "BL58-S1",
+          "case_type": "multi_facet",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S2",
+          "case_type": "short_sparse",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.5,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-S3",
+          "case_type": "paraphrase_synonymy",
+          "subset": "synthetic",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.75,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R01",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R02",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R03",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R04",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.5,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "LK_manual_v-119_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R05",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R06",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 0.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R07",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 0.667,
+          "precision_at_3": 0.667,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R08",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "Click2call_Chrome_UserManual_1_0.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R09",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R10",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 0.5,
+          "precision_at_3": 0.333,
+          "context_recall": 0.333,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R11",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 2,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.333,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R12",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R13",
+          "case_type": "direct",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 0,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.0,
+          "context_recall": 0.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R14",
+          "case_type": "multi_facet",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "RECHEVAYA-ANALITIKA_1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_VATS-_-Skoring-1.26.18.pdf",
+            "RECHEVAYA-ANALITIKA_Skoring_Rukovodstvo-polzovatelya_v.1.26.15.pdf",
+            "SIP_trunk-1.23.43.pdf",
+            "MangoOffice_VPBX_API_v1.9.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R15",
+          "case_type": "paraphrase_synonymy",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 0.667,
+          "context_recall": 0.667,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "LK_manual_v-119_compressed.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "Rolevaya-model-VATS_1_26_08.pdf",
+            "QM_manual_v-1.26.08_compressed.pdf",
+            "MANGO_OFFICE_LK_VATS_Auth_SSO.pdf"
+          ]
+        },
+        {
+          "id": "BL58-R16",
+          "case_type": "short_sparse",
+          "subset": "real_sample_tz_1",
+          "hit_rank": 1,
+          "recall_at_k": 1.0,
+          "precision_at_3": 1.0,
+          "context_recall": 1.0,
+          "strict_mode_fallback": true,
+          "top_sources": [
+            "SIP_trunk-1.23.43.pdf"
+          ]
+        }
+      ]
+    }
+  ]
+}
