@@ -1048,7 +1048,10 @@ def _show_toast(message: str, *, icon: Optional[str] = None) -> None:
     toast = getattr(st, "toast", None)
     if callable(toast):
         try:
-            toast(message, icon=icon) if icon else toast(message)
+            if icon:
+                toast(message, icon=icon)
+            else:
+                toast(message)
             return
         except TypeError:
             toast(message)
